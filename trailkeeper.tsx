@@ -29,6 +29,16 @@ const E0 = [];
 const TR0 = [];
 const CA0 = [];
 const JN0 = [];
+const ACTIVITY_TYPES = [
+  {id:'walking',label:'Walking',icon:'🚶',color:C.mg},
+  {id:'jogging',label:'Jogging',icon:'🏃',color:C.sky},
+  {id:'hiking',label:'Hiking',icon:'🥾',color:'#166534'},
+  {id:'5k',label:'5K',icon:'🎽',color:'#7C3AED'},
+  {id:'interval',label:'Interval Training',icon:'⏱️',color:C.am},
+  {id:'basketball',label:'Basketball',icon:'🏀',color:'#ea580c'},
+  {id:'cycling',label:'Cycling',icon:'🚴',color:'#0f766e'},
+  {id:'other',label:'Other',icon:'⭐',color:C.br},
+];
 
 function genId(){return typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:r&0x3|0x8).toString(16);});}
 function haversine(a,b,c,d){const R=3958.8,dLat=(c-a)*Math.PI/180,dLng=(d-b)*Math.PI/180;const x=Math.sin(dLat/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dLng/2)**2;return +(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))).toFixed(5);}
@@ -342,14 +352,15 @@ function CatalogMapView({entries,trails,userLoc,onSelect}){
   );
 }
 
-function ActivityOverlay({path,tTime,tDist,onStop,onTogglePause,paused,gpsMode,locked,onToggleLock}){
+function ActivityOverlay({path,tTime,tDist,onStop,onTogglePause,paused,gpsMode,locked,onToggleLock,activityType}){
   const cur=path.length>0?path[path.length-1]:null;
+  const activity=activityType||ACTIVITY_TYPES[0];
   return(
     <div style={{position:'fixed',inset:0,zIndex:250,display:'flex',flexDirection:'column',maxWidth:430,margin:'0 auto',background:C.dg}}>
       <div style={{background:'linear-gradient(155deg,'+C.dg+',#2D6A4F)',padding:'52px 20px 20px',flexShrink:0}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
           <div>
-            <div style={{fontSize:10,fontWeight:700,color:C.pg,letterSpacing:'1.5px',marginBottom:4}}>{paused?'⏸ PAUSED':gpsMode==='real'?'🛰️ GPS ACTIVE':'📡 GPS SIMULATED'}</div>
+            <div style={{fontSize:10,fontWeight:700,color:C.pg,letterSpacing:'1.5px',marginBottom:4}}>{activity.icon} {activity.label.toUpperCase()} · {paused?'PAUSED':gpsMode==='real'?'GPS ACTIVE':'GPS SIMULATED'}</div>
             <div style={{fontSize:44,fontWeight:900,color:C.wh,lineHeight:1,letterSpacing:'-1px'}}>{fmtTime(tTime)}</div>
             <div style={{fontSize:12,color:'#a7f3d0',marginTop:2}}>elapsed time</div>
           </div>
@@ -394,13 +405,14 @@ function ActivityOverlay({path,tTime,tDist,onStop,onTogglePause,paused,gpsMode,l
   );
 }
 
-function ActivitySummary({path,tTime,tDist,onDismiss,onSaveJournal,onShare}){
+function ActivitySummary({path,tTime,tDist,onDismiss,onSaveJournal,onShare,activityType}){
+  const activity=activityType||ACTIVITY_TYPES[0];
   return(
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 20px'}}>
       <div style={{background:C.wh,borderRadius:28,width:'100%',maxWidth:400,overflow:'hidden',boxShadow:'0 24px 60px rgba(0,0,0,0.3)'}}>
         <div style={{background:'linear-gradient(135deg,'+C.dg+','+C.mg+')',padding:'20px',textAlign:'center'}}>
           <div style={{fontSize:36,marginBottom:6}}>🎉</div>
-          <div style={{color:C.wh,fontWeight:800,fontSize:20}}>Activity Complete!</div>
+          <div style={{color:C.wh,fontWeight:800,fontSize:20}}>{activity.icon} {activity.label} Complete!</div>
         </div>
         <div style={{display:'flex',borderBottom:'1px solid '+C.pg}}>
           {[{l:'Time',v:fmtTime(tTime)},{l:'Distance',v:fmtDist(tDist)},{l:'Pace',v:calcPace(tTime,tDist)}].map(s=>(
@@ -422,6 +434,32 @@ function ActivitySummary({path,tTime,tDist,onDismiss,onSaveJournal,onShare}){
           <button onClick={onSaveJournal} style={{flex:1,padding:'13px 8px',borderRadius:14,border:'none',background:C.mg,color:C.wh,fontWeight:700,fontSize:12,cursor:'pointer'}}>📔 Save</button>
           <button onClick={onShare} style={{flex:1,padding:'13px 8px',borderRadius:14,border:'none',background:C.sky,color:C.wh,fontWeight:700,fontSize:12,cursor:'pointer'}}>📤 Share</button>
           <button onClick={onDismiss} style={{flex:1,padding:'13px 8px',borderRadius:14,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:12,cursor:'pointer'}}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActivityTypeModal({onSelect,onClose}){
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.58)',zIndex:420,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+      <div style={{width:'100%',maxWidth:430,background:C.cr,borderRadius:'28px 28px 0 0',maxHeight:'82vh',overflowY:'auto',padding:'12px 16px 24px'}}>
+        <div style={{display:'flex',justifyContent:'center',padding:'2px 0 14px'}}><div style={{width:36,height:4,borderRadius:2,background:'#D1D5DB'}}/></div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+          <div>
+            <div style={{fontWeight:900,fontSize:21,color:C.dg}}>Choose Activity</div>
+            <div style={{fontSize:12,color:C.gr,marginTop:3}}>Timer starts after selection</div>
+          </div>
+          <button onClick={onClose} style={{border:'none',background:C.pg,color:C.dg,borderRadius:12,width:34,height:34,fontSize:18,fontWeight:800,cursor:'pointer'}}>×</button>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          {ACTIVITY_TYPES.map(a=>(
+            <button key={a.id} onClick={()=>onSelect(a)} style={{minHeight:104,border:'1.5px solid '+a.color+'22',background:C.wh,borderRadius:18,padding:'14px 10px',cursor:'pointer',textAlign:'left',boxShadow:'0 1px 8px rgba(0,0,0,0.05)'}}>
+              <div style={{width:42,height:42,borderRadius:14,background:a.color+'18',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,marginBottom:10}}>{a.icon}</div>
+              <div style={{fontWeight:900,fontSize:14,color:C.dg,lineHeight:1.2}}>{a.label}</div>
+              <div style={{fontSize:11,color:C.gr,marginTop:3,fontWeight:700}}>Start tracking</div>
+            </button>
+          ))}
         </div>
       </div>
     </div>
@@ -1189,6 +1227,8 @@ export default function TrailKeeper(){
   const [tracking,setTracking]=useState(false);
   const [paused,setPaused]=useState(false);
   const [activityLocked,setActivityLocked]=useState(true);
+  const [showActivityPicker,setShowActivityPicker]=useState(false);
+  const [activityType,setActivityType]=useState(null);
   const [showActivity,setShowActivity]=useState(false);
   const [showSummary,setShowSummary]=useState(false);
   const [tTime,setTTime]=useState(0);
@@ -1359,17 +1399,20 @@ export default function TrailKeeper(){
     setShowAdd(false);setPhoto(null);setAiSuggestions(null);setEntryLoc(null);setNewEntry({type:'tree',name:'',notes:'',description:''});
   };
 
-  const handleStartActivity=()=>{setTTime(0);setTDist(0);setTrackPath([]);setGpsMode('sim');setPaused(false);setActivityLocked(true);setTracking(true);setShowActivity(true);};
+  const handleStartActivity=()=>setShowActivityPicker(true);
+  const beginActivity=type=>{setActivityType(type);setShowActivityPicker(false);setTTime(0);setTDist(0);setTrackPath([]);setGpsMode('sim');setPaused(false);setActivityLocked(true);setTracking(true);setShowActivity(true);};
   const handleStopActivity=()=>{setTracking(false);setPaused(false);setActivityLocked(true);setShowActivity(false);setShowSummary(true);};
   const handleSaveJournal=()=>{
-    const j={id:genId(),date:new Date().toISOString().split('T')[0],title:'Activity — '+fmtDist(tDist),body:'Completed '+fmtDist(tDist)+' in '+fmtTime(tTime)+'. Pace: '+calcPace(tTime,tDist)+'. '+trackPath.length+' GPS points recorded.'};
+    const label=activityType?.label||'Activity';
+    const j={id:genId(),date:new Date().toISOString().split('T')[0],title:label+' — '+fmtDist(tDist),body:'Completed '+label.toLowerCase()+' '+fmtDist(tDist)+' in '+fmtTime(tTime)+'. Pace: '+calcPace(tTime,tDist)+'. '+trackPath.length+' GPS points recorded.'};
     setJournal(js=>[j,...js]);
     sync('journal',j);
     setShowSummary(false);
   };
   const handleShareActivity=async()=>{
-    const text='TrailKeeper activity: '+fmtDist(tDist)+' in '+fmtTime(tTime)+' at '+calcPace(tTime,tDist)+' pace.';
-    if(navigator.share){await navigator.share({title:'TrailKeeper Activity',text}).catch(()=>{});}
+    const label=activityType?.label||'Activity';
+    const text='TrailKeeper '+label.toLowerCase()+': '+fmtDist(tDist)+' in '+fmtTime(tTime)+' at '+calcPace(tTime,tDist)+' pace.';
+    if(navigator.share){await navigator.share({title:'TrailKeeper '+label,text}).catch(()=>{});}
     else await navigator.clipboard?.writeText(text).catch(()=>{});
   };
   const handleSharePlace=async place=>{
@@ -1402,8 +1445,9 @@ export default function TrailKeeper(){
         {tab==='profile'&&<ProfileScreen entries={entries} stats={stats} journal={journal} setJournal={setJournal} sb={sb} session={session} onSignOut={handleSignOut} profileName={profileName} setProfileName={setProfileName} profileAvatar={profileAvatar} setProfileAvatar={setProfileAvatar}/>}
       </div>
       <BottomNav tab={tab} setTab={setTab}/>
-      {showActivity&&<ActivityOverlay path={trackPath} tTime={tTime} tDist={tDist} onStop={handleStopActivity} onTogglePause={()=>setPaused(p=>!p)} paused={paused} gpsMode={gpsMode} locked={activityLocked} onToggleLock={()=>setActivityLocked(l=>!l)}/>}
-      {showSummary&&<ActivitySummary path={trackPath} tTime={tTime} tDist={tDist} onDismiss={()=>setShowSummary(false)} onSaveJournal={handleSaveJournal} onShare={handleShareActivity}/>}
+      {showActivityPicker&&<ActivityTypeModal onSelect={beginActivity} onClose={()=>setShowActivityPicker(false)}/>}
+      {showActivity&&<ActivityOverlay path={trackPath} tTime={tTime} tDist={tDist} onStop={handleStopActivity} onTogglePause={()=>setPaused(p=>!p)} paused={paused} gpsMode={gpsMode} locked={activityLocked} onToggleLock={()=>setActivityLocked(l=>!l)} activityType={activityType}/>}
+      {showSummary&&<ActivitySummary path={trackPath} tTime={tTime} tDist={tDist} onDismiss={()=>setShowSummary(false)} onSaveJournal={handleSaveJournal} onShare={handleShareActivity} activityType={activityType}/>}
       {showAdd&&<AddEntryModal entry={newEntry} setEntry={setNewEntry} photo={photo} onPhoto={handlePhoto} loading={aiLoading} suggestions={aiSuggestions} onAI={handleAI} onSave={handleSave} onClose={()=>{setShowAdd(false);setPhoto(null);setAiSuggestions(null);setEntryLoc(null);setNewEntry({type:'tree',name:'',notes:'',description:''}); }} entryLoc={entryLoc}/>}
       {selectedPlace&&<PlaceDetailModal place={selectedPlace} userLoc={userLoc} onClose={()=>setSelectedPlace(null)} onShare={handleSharePlace}/>}
       {selectedEntry&&(
