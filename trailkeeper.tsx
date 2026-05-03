@@ -39,6 +39,7 @@ const ACTIVITY_TYPES = [
   {id:'cycling',label:'Cycling',icon:'🚴',color:'#0f766e'},
   {id:'other',label:'Other',icon:'⭐',color:C.br},
 ];
+const PHOTO_REACTIONS = ['❤️','🔥','😍','👏','🌿','👀'];
 
 function genId(){return typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:r&0x3|0x8).toString(16);});}
 function haversine(a,b,c,d){const R=3958.8,dLat=(c-a)*Math.PI/180,dLng=(d-b)*Math.PI/180;const x=Math.sin(dLat/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dLng/2)**2;return +(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))).toFixed(5);}
@@ -49,6 +50,9 @@ function calcPace(t,d){return t>0&&d>0.01?(t/60/d).toFixed(1)+'/mi':'--';}
 function badgeProgress(metric,stats){
   const map={total_entries:stats.total,trees:stats.trees,birds:stats.birds,trails:stats.trails,caches:stats.caches,plants:stats.plants,fungi:stats.fungi,landmarks:stats.landmarks};
   return map[metric]||0;
+}
+function reactionCounts(reactions){
+  return reactions.reduce((m,r)=>({...m,[r.emoji]:(m[r.emoji]||0)+1}),{});
 }
 function placeMeta(tags={}){
   if(tags.route==='hiking'||tags.highway==='path'||tags.highway==='footway'||tags.highway==='track')return{kind:'Trail',icon:'🥾',color:C.sky};
@@ -1340,6 +1344,10 @@ export default function TrailKeeper(){
   const [photo,setPhoto]=useState(null);
   const [entryLoc,setEntryLoc]=useState(null);
   const [selectedEntry,setSelectedEntry]=useState(null);
+  const [entryComments,setEntryComments]=useState([]);
+  const [entryReactions,setEntryReactions]=useState([]);
+  const [commentDraft,setCommentDraft]=useState('');
+  const [entrySocialLoading,setEntrySocialLoading]=useState(false);
   const [selectedPlace,setSelectedPlace]=useState(null);
   const [shareTrail,setShareTrail]=useState(null);
   const [userLoc,setUserLoc]=useState(null);
@@ -1442,6 +1450,19 @@ export default function TrailKeeper(){
       .catch(err=>{console.warn('Nearby places:',err);if(!cancelled){setNearbyPlaces([]);setNearbyStatus('error');}});
     return()=>{cancelled=true;};
   },[userLoc?.lat,userLoc?.lng]);
+
+  useEffect(()=>{
+    const isPublic=selectedEntry&&(selectedEntry.pub||selectedEntry.publicSource);
+    if(!sb||!session||!isPublic){setEntryComments([]);setEntryReactions([]);return;}
+    let cancelled=false;
+    setEntrySocialLoading(true);
+    Promise.all([
+      sb.get('entry_comments',session.access_token,'entry_id=eq.'+selectedEntry.id+'&order=created_at.asc').catch(()=>[]),
+      sb.get('entry_reactions',session.access_token,'entry_id=eq.'+selectedEntry.id).catch(()=>[]),
+    ]).then(([comments,reactions])=>{if(!cancelled){setEntryComments(comments||[]);setEntryReactions(reactions||[]);}})
+      .finally(()=>{if(!cancelled)setEntrySocialLoading(false);});
+    return()=>{cancelled=true;};
+  },[selectedEntry?.id,selectedEntry?.pub,selectedEntry?.publicSource,session?.access_token]);
 
   useEffect(()=>{
     if(!sb||!session)return;
@@ -1569,6 +1590,27 @@ export default function TrailKeeper(){
     if(navigator.share){await navigator.share({title:place.name,text,url}).catch(()=>{});}
     else await navigator.clipboard?.writeText(text).catch(()=>{});
   };
+  const handleAddComment=()=>{
+    const body=commentDraft.trim();
+    if(!body||!selectedEntry||!session)return;
+    const c={id:genId(),entry_id:selectedEntry.id,body,author_name:profileName||session.user.email?.split('@')[0]||'Explorer',author_avatar:profileAvatar||'',created_at:new Date().toISOString()};
+    setEntryComments(cs=>[...cs,c]);
+    setCommentDraft('');
+    sync('entry_comments',c);
+  };
+  const handleToggleReaction=emoji=>{
+    if(!selectedEntry||!session)return;
+    const existing=entryReactions.find(r=>r.emoji===emoji&&r.user_id===session.user.id);
+    if(existing){
+      setEntryReactions(rs=>rs.filter(r=>r.id!==existing.id));
+      sb?.del('entry_reactions',existing.id,session.access_token).catch(()=>{});
+      return;
+    }
+    const r={id:genId(),entry_id:selectedEntry.id,emoji,created_at:new Date().toISOString()};
+    setEntryReactions(rs=>[...rs,{...r,user_id:session.user.id}]);
+    sync('entry_reactions',r);
+  };
+  const closeEntryDetail=()=>{setSelectedEntry(null);setEntryComments([]);setEntryReactions([]);setCommentDraft('');};
 
   const stats={trees:entries.filter(e=>e.type==='tree').length,birds:entries.filter(e=>e.type==='bird').length,plants:entries.filter(e=>e.type==='plant').length,fungi:entries.filter(e=>e.type==='fungi').length,landmarks:entries.filter(e=>e.type==='landmark').length,caches:caches.filter(c=>c.found).length,trails:trails.length,total:entries.length};
 
@@ -1614,7 +1656,43 @@ export default function TrailKeeper(){
                 {(selectedEntry.pub||selectedEntry.publicSource)&&<span style={{fontSize:11,fontWeight:700,color:selectedEntry.publicSource?C.sky:C.mg,background:C.wh,padding:'4px 10px',borderRadius:8}}>{selectedEntry.publicSource?'🌍 Public discovery':'🌍 Published'}</span>}
               </div>
               {selectedEntry.notes&&<div style={{fontSize:14,color:C.dg,lineHeight:1.65,background:C.pg,borderRadius:12,padding:'10px 14px',marginBottom:16}}>{selectedEntry.notes}</div>}
-              <button onClick={()=>setSelectedEntry(null)} style={{width:'100%',padding:'14px',borderRadius:16,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:14,cursor:'pointer'}}>Close</button>
+              {(selectedEntry.pub||selectedEntry.publicSource)&&(
+                <div style={{marginBottom:16}}>
+                  {selectedEntry.photo&&(
+                    <Card style={{marginBottom:12,padding:'12px 14px'}}>
+                      <div style={{fontWeight:800,fontSize:13,color:C.dg,marginBottom:9}}>Photo Reactions</div>
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                        {PHOTO_REACTIONS.map(emoji=>{
+                          const counts=reactionCounts(entryReactions);
+                          const active=entryReactions.some(r=>r.emoji===emoji&&r.user_id===session?.user?.id);
+                          return <button key={emoji} onClick={()=>handleToggleReaction(emoji)} style={{padding:'7px 10px',borderRadius:12,border:'1.5px solid '+(active?C.mg:C.pg),background:active?C.pg:C.wh,color:C.dg,fontWeight:800,fontSize:14,cursor:'pointer'}}>{emoji} {counts[emoji]||0}</button>;
+                        })}
+                      </div>
+                    </Card>
+                  )}
+                  <Card style={{padding:'12px 14px'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                      <div style={{fontWeight:800,fontSize:13,color:C.dg}}>Comments</div>
+                      {entrySocialLoading&&<div style={{fontSize:10,color:C.gr,fontWeight:800}}>Loading…</div>}
+                    </div>
+                    <div style={{display:'flex',gap:8,marginBottom:12}}>
+                      <input value={commentDraft} onChange={e=>setCommentDraft(e.target.value)} placeholder="Leave a public comment…" style={{flex:1,minWidth:0,padding:'10px 12px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:13,boxSizing:'border-box',outline:'none',fontFamily:'inherit'}}/>
+                      <button onClick={handleAddComment} disabled={!commentDraft.trim()} style={{padding:'0 13px',borderRadius:12,border:'none',background:commentDraft.trim()?C.mg:'#D1D5DB',color:C.wh,fontWeight:800,fontSize:12,cursor:commentDraft.trim()?'pointer':'not-allowed'}}>Post</button>
+                    </div>
+                    {entryComments.length===0&&<div style={{fontSize:12,color:C.gr,textAlign:'center',padding:'12px 0'}}>No comments yet.</div>}
+                    {entryComments.map(c=>(
+                      <div key={c.id} style={{display:'flex',gap:9,borderTop:'1px solid '+C.pg,padding:'10px 0'}}>
+                        <div style={{width:32,height:32,borderRadius:11,background:C.pg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,overflow:'hidden',flexShrink:0}}>{c.author_avatar?<img src={c.author_avatar} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:'🧭'}</div>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:800,color:C.dg}}>{c.author_name||'Explorer'}</div>
+                          <div style={{fontSize:12,color:'#374151',lineHeight:1.45}}>{c.body}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </Card>
+                </div>
+              )}
+              <button onClick={closeEntryDetail} style={{width:'100%',padding:'14px',borderRadius:16,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:14,cursor:'pointer'}}>Close</button>
             </div>
           </div>
         </div>
