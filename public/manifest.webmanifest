@@ -1,0 +1,19 @@
+{
+  "name": "TrailKeeper",
+  "short_name": "TrailKeeper",
+  "description": "Catalog outdoor discoveries, build trails, and track activities.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F0EDE6",
+  "theme_color": "#1B4332",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

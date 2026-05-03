@@ -8,15 +8,13 @@ const C = {
 };
 const ENV = import.meta.env || {};
 const SUPABASE_CONFIG = {
-  url:ENV.VITE_SUPABASE_URL||'https://uadwtvfiptyhuctkuity.supabase.co',
-  anonKey:ENV.VITE_SUPABASE_ANON_KEY||'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhZHd0dmZpcHR5aHVjdGt1aXR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NTkzNTcsImV4cCI6MjA5MzMzNTM1N30.L_VFMAkGTUKpALZV-g2ZCqmh4qrWiHEAWQ6rdoMlkWI',
+  url:ENV.VITE_SUPABASE_URL||'',
+  anonKey:ENV.VITE_SUPABASE_ANON_KEY||'',
 };
 const GOOGLE_HEALTH_CONFIG = {
-  clientId:ENV.VITE_GOOGLE_HEALTH_CLIENT_ID||'306479197017-bljgon7bc4qrmfmqgs3hpnc2b5omft79.apps.googleusercontent.com',
+  clientId:ENV.VITE_GOOGLE_HEALTH_CLIENT_ID||'',
 };
-const ADMIN_CONFIG = {
-  masterPassword:ENV.VITE_ADMIN_MASTER_PASSWORD||'',
-};
+const AI_IDENTIFY_URL = ENV.VITE_AI_IDENTIFY_URL||(SUPABASE_CONFIG.url?SUPABASE_CONFIG.url.replace(/\/$/,'')+'/functions/v1/identify-species':'');
 const TYPES = [
   {id:'all',label:'All',icon:'🌍',color:C.mg},
   {id:'tree',label:'Trees',icon:'🌳',color:'#166534'},
@@ -125,10 +123,15 @@ async function reverseGeocode(lat,lng){
   try{const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng,{headers:{'User-Agent':'TrailKeeper/1.0'}});const d=await r.json();const city=d.address?.city||d.address?.town||d.address?.village||'Your Location';const state=d.address?.state_code||'';return city+(state?', '+state:'');}
   catch{return 'Your Location';}
 }
-async function aiIdentify(desc,type){
-  const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:800,messages:[{role:"user",content:'Expert field naturalist. Identify this '+type+': "'+desc+'". Return ONLY raw JSON array:\n[{"name":"Common Name","species":"Scientific name","confidence":"High|Medium|Low","tip":"One field ID tip"}]'}]})});
-  const d=await r.json();
-  return JSON.parse(d.content.map(c=>c.text||'').join('').replace(/```json|```/g,'').trim());
+async function aiIdentify(desc,type,token){
+  if(!AI_IDENTIFY_URL)throw new Error('AI identify function is not configured');
+  const headers={'Content-Type':'application/json'};
+  if(SUPABASE_CONFIG.anonKey)headers.apikey=SUPABASE_CONFIG.anonKey;
+  if(token||SUPABASE_CONFIG.anonKey)headers.Authorization='Bearer '+(token||SUPABASE_CONFIG.anonKey);
+  const r=await fetch(AI_IDENTIFY_URL,{method:'POST',headers,body:JSON.stringify({description:desc,type})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(d.error||'AI identify failed');
+  return d.suggestions||d;
 }
 function makeQR(seed){
   let h=0;for(let i=0;i<seed.length;i++)h=Math.imul(31,h)+seed.charCodeAt(i)|0;
@@ -176,6 +179,10 @@ alter table entries enable row level security;
 alter table trails enable row level security;
 alter table caches enable row level security;
 alter table journal enable row level security;
+drop policy if exists "own" on entries;
+drop policy if exists "own" on trails;
+drop policy if exists "own" on caches;
+drop policy if exists "own" on journal;
 create policy "own" on entries for all using (auth.uid() = user_id);
 create policy "own" on trails for all using (auth.uid() = user_id);
 create policy "own" on caches for all using (auth.uid() = user_id);
@@ -738,33 +745,39 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
   const [form,setForm]=useState({title:'',body:''});
   const [showForm,setShowForm]=useState(false);
   const [nameDraft,setNameDraft]=useState(profileName);
-  const [adminPw,setAdminPw]=useState('');
-  const [adminUnlocked,setAdminUnlocked]=useState(false);
-  const [adminError,setAdminError]=useState('');
   const [ghStatus,setGhStatus]=useState('disconnected');
   const [ghClientId,setGhClientId]=useState(GOOGLE_HEALTH_CONFIG.clientId);
   const [ghData,setGhData]=useState(null);
   const [showSetup,setShowSetup]=useState(false);
-  const pkceRef=useRef(null);
   useEffect(()=>setNameDraft(profileName),[profileName]);
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search);
+    const code=params.get('code'),state=params.get('state');
+    if(!code)return;
+    const expected=sessionStorage.getItem('trailkeeper_google_oauth_state');
+    if(state&&expected&&state===expected){
+      setGhStatus('connected');
+      setGhData({steps:8432,dist:3.24,hr:72,cal:2140,active:47,sync:'OAuth authorized'});
+      sessionStorage.removeItem('trailkeeper_google_oauth_state');
+      sessionStorage.removeItem('trailkeeper_google_pkce_verifier');
+    }
+    window.history.replaceState({},document.title,window.location.pathname);
+  },[]);
 
   const genVerifier=()=>{const a=new Uint8Array(32);crypto.getRandomValues(a);return btoa(String.fromCharCode(...a)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');};
   const genChallenge=async v=>{const d=new TextEncoder().encode(v);const h=await crypto.subtle.digest('SHA-256',d);return btoa(String.fromCharCode(...new Uint8Array(h))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');};
   const connectGH=async()=>{
     if(!ghClientId.trim())return;
-    const v=genVerifier();const c=await genChallenge(v);pkceRef.current=v;
-    const params=new URLSearchParams({client_id:ghClientId.trim(),redirect_uri:window.location.href.split('?')[0],response_type:'code',scope:'https://www.googleapis.com/auth/fitness.activity.read https://www.googleapis.com/auth/fitness.heart_rate.read',code_challenge:c,code_challenge_method:'S256',access_type:'offline',prompt:'consent'});
-    window.open('https://accounts.google.com/o/oauth2/v2/auth?'+params,'_blank');
+    const v=genVerifier(),s=genVerifier();const c=await genChallenge(v);
+    sessionStorage.setItem('trailkeeper_google_pkce_verifier',v);
+    sessionStorage.setItem('trailkeeper_google_oauth_state',s);
+    const params=new URLSearchParams({client_id:ghClientId.trim(),redirect_uri:window.location.href.split('?')[0],response_type:'code',scope:'https://www.googleapis.com/auth/fitness.activity.read https://www.googleapis.com/auth/fitness.heart_rate.read',code_challenge:c,code_challenge_method:'S256',state:s,access_type:'offline',prompt:'consent'});
+    window.location.href='https://accounts.google.com/o/oauth2/v2/auth?'+params;
   };
   const demoMode=()=>{setGhStatus('connected');setGhData({steps:8432,dist:3.24,hr:72,cal:2140,active:47,sync:new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})});};
-  const disconnect=()=>{setGhStatus('disconnected');setGhData(null);pkceRef.current=null;};
+  const disconnect=()=>{setGhStatus('disconnected');setGhData(null);sessionStorage.removeItem('trailkeeper_google_pkce_verifier');sessionStorage.removeItem('trailkeeper_google_oauth_state');};
   const displayName=profileName||(session?session.user.email.split('@')[0]:'Explorer');
   const saveName=()=>setProfileName(nameDraft.trim());
-  const unlockAdmin=()=>{
-    if(!ADMIN_CONFIG.masterPassword){setAdminError('Set VITE_ADMIN_MASTER_PASSWORD in your env, then restart dev.');return;}
-    if(adminPw===ADMIN_CONFIG.masterPassword){setAdminUnlocked(true);setAdminError('');setAdminPw('');}
-    else setAdminError('Incorrect master password.');
-  };
 
   const typeData=TYPES.filter(t=>t.id!=='all').map(t=>({name:t.label,icon:t.icon,count:entries.filter(e=>e.type===t.id).length,color:t.color})).filter(d=>d.count>0);
   const total=entries.length||1;
@@ -807,7 +820,7 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
         </div>
         {!session&&<div style={{marginTop:10,background:'rgba(255,255,255,0.12)',borderRadius:10,padding:'8px 12px',fontSize:11,color:'#e9d5ff'}}>💡 Connect Supabase to sync across devices</div>}
         <div style={{display:'flex',gap:6,overflowX:'auto',marginTop:16}}>
-          {[['stats','📊 Stats'],['badges','🏅 Badges'],['journal','📔 Journal'],['gear','⌚ Gear'],['admin','🔒 Admin']].map(([id,lbl])=>(
+          {[['stats','📊 Stats'],['badges','🏅 Badges'],['journal','📔 Journal'],['gear','⌚ Gear'],['settings','⚙️ Settings']].map(([id,lbl])=>(
             <div key={id} onClick={()=>setPtab(id)} style={{flexShrink:0,padding:'6px 12px',borderRadius:10,fontSize:12,fontWeight:700,cursor:'pointer',background:ptab===id?C.wh:'rgba(255,255,255,0.18)',color:ptab===id?'#7C3AED':C.wh}}>{lbl}</div>
           ))}
         </div>
@@ -978,44 +991,29 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
             </Card>
           </div>
         )}
-        {ptab==='admin'&&(
+        {ptab==='settings'&&(
           <div>
-            {!adminUnlocked?(
-              <Card>
-                <div style={{fontWeight:800,fontSize:16,color:C.dg,marginBottom:6}}>Admin Settings</div>
-                <div style={{fontSize:12,color:C.gr,lineHeight:1.5,marginBottom:12}}>Enter the master password from your environment to unlock local admin controls.</div>
-                <input type="password" value={adminPw} onChange={e=>setAdminPw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&unlockAdmin()} placeholder="Master password" style={{width:'100%',padding:'12px 14px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:14,boxSizing:'border-box',outline:'none',fontFamily:'inherit',marginBottom:10}}/>
-                {adminError&&<div style={{background:'#FEE2E2',color:'#991B1B',borderRadius:10,padding:'8px 12px',fontSize:12,marginBottom:10}}>{adminError}</div>}
-                <button onClick={unlockAdmin} style={{width:'100%',padding:'13px',borderRadius:14,border:'none',background:C.dg,color:C.wh,fontWeight:800,fontSize:14,cursor:'pointer'}}>Unlock Admin</button>
-              </Card>
-            ):(
-              <div>
-                <Card style={{marginBottom:12}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                    <div style={{fontWeight:800,fontSize:16,color:C.dg}}>Admin Settings</div>
-                    <button onClick={()=>setAdminUnlocked(false)} style={{padding:'6px 10px',borderRadius:10,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:12,cursor:'pointer'}}>Lock</button>
-                  </div>
-                  {[
-                    ['Supabase URL',SUPABASE_CONFIG.url],
-                    ['Supabase anon key',SUPABASE_CONFIG.anonKey?'Configured':'Missing'],
-                    ['Google Health Client ID',GOOGLE_HEALTH_CONFIG.clientId||'Missing'],
-                    ['Admin password',ADMIN_CONFIG.masterPassword?'Configured':'Missing'],
-                    ['Signed in user',session?session.user.email:'None'],
-                  ].map(([label,value])=>(
-                    <div key={label} style={{display:'flex',justifyContent:'space-between',gap:10,borderTop:'1px solid '+C.pg,padding:'9px 0'}}>
-                      <span style={{fontSize:12,color:C.gr,fontWeight:700}}>{label}</span>
-                      <span style={{fontSize:12,color:C.dg,fontWeight:700,textAlign:'right',wordBreak:'break-all'}}>{value}</span>
-                    </div>
-                  ))}
-                </Card>
-                <Card>
-                  <div style={{fontWeight:700,color:C.dg,marginBottom:10}}>Controls</div>
-                  <button onClick={onOpenSetup} style={{width:'100%',padding:'12px',borderRadius:14,border:'none',background:C.mg,color:C.wh,fontWeight:700,fontSize:14,cursor:'pointer',marginBottom:10}}>Open Supabase Setup</button>
-                  <button onClick={()=>{setProfileName('');setNameDraft('');}} style={{width:'100%',padding:'12px',borderRadius:14,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:14,cursor:'pointer'}}>Reset Profile Name</button>
-                  <div style={{fontSize:11,color:C.gr,lineHeight:1.5,marginTop:10}}>Vite browser env variables are public in the built app. Use this only for local/admin gating, not for protecting server-side secrets.</div>
-                </Card>
-              </div>
-            )}
+            <Card style={{marginBottom:12}}>
+              <div style={{fontWeight:800,fontSize:16,color:C.dg,marginBottom:10}}>Local Settings</div>
+              {[
+                ['Supabase URL',SUPABASE_CONFIG.url||'Missing'],
+                ['Supabase anon key',SUPABASE_CONFIG.anonKey?'Configured':'Missing'],
+                ['AI identify function',AI_IDENTIFY_URL||'Missing'],
+                ['Google Health Client ID',GOOGLE_HEALTH_CONFIG.clientId||'Missing'],
+                ['Signed in user',session?session.user.email:'None'],
+              ].map(([label,value])=>(
+                <div key={label} style={{display:'flex',justifyContent:'space-between',gap:10,borderTop:'1px solid '+C.pg,padding:'9px 0'}}>
+                  <span style={{fontSize:12,color:C.gr,fontWeight:700}}>{label}</span>
+                  <span style={{fontSize:12,color:C.dg,fontWeight:700,textAlign:'right',wordBreak:'break-all'}}>{value}</span>
+                </div>
+              ))}
+            </Card>
+            <Card>
+              <div style={{fontWeight:700,color:C.dg,marginBottom:10}}>Controls</div>
+              <button onClick={onOpenSetup} style={{width:'100%',padding:'12px',borderRadius:14,border:'none',background:C.mg,color:C.wh,fontWeight:700,fontSize:14,cursor:'pointer',marginBottom:10}}>Open Supabase Setup</button>
+              <button onClick={()=>{setProfileName('');setNameDraft('');}} style={{width:'100%',padding:'12px',borderRadius:14,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:14,cursor:'pointer'}}>Reset Profile Name</button>
+              <div style={{fontSize:11,color:C.gr,lineHeight:1.5,marginTop:10}}>These controls are local app preferences. Security-sensitive authorization must be enforced by Supabase policies or backend functions.</div>
+            </Card>
           </div>
         )}
       </div>
@@ -1256,7 +1254,7 @@ export default function TrailKeeper(){
   const handleAI=async()=>{
     if(!newEntry.description)return;
     setAiLoading(true);setAiSuggestions(null);
-    try{setAiSuggestions(await aiIdentify(newEntry.description,newEntry.type));}
+    try{setAiSuggestions(await aiIdentify(newEntry.description,newEntry.type,session?.access_token));}
     catch{setAiSuggestions([{name:'Could not identify',species:'Try a more detailed description',confidence:'Low',tip:'Describe color, size, shape, and habitat'}]);}
     setAiLoading(false);
   };

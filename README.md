@@ -11,7 +11,9 @@ TrailKeeper is a mobile-first React app for cataloging outdoor discoveries, buil
 - Geocache and journal views
 - Profile name editing with local persistence
 - Google Health OAuth client setup using PKCE
-- Admin settings panel gated by an environment-provided master password
+- Local settings and connection diagnostics
+- Server-side AI species identification through a Supabase Edge Function
+- Installable browser app with a web manifest and service worker
 
 ## Setup
 
@@ -33,7 +35,7 @@ Configure:
 VITE_SUPABASE_URL=your-supabase-project-url
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 VITE_GOOGLE_HEALTH_CLIENT_ID=your-google-oauth-client-id
-VITE_ADMIN_MASTER_PASSWORD=your-local-admin-password
+VITE_AI_IDENTIFY_URL=https://your-project.supabase.co/functions/v1/identify-species
 ```
 
 Run the app:
@@ -44,10 +46,37 @@ npm run dev
 
 Then open the local URL shown by Vite.
 
+Build for production:
+
+```bash
+npm run build
+```
+
+Preview the production build:
+
+```bash
+npm run preview
+```
+
+## Install As An App
+
+TrailKeeper includes a web manifest and service worker. On supported browsers, open the deployed site and use the browser's install action to add it to the home screen or app launcher.
+
 ## Supabase Schema
 
 The app includes SQL in the setup screen. In Supabase, open SQL Editor, paste the generated schema, and run it before relying on synced entries, trails, caches, or journal data.
 
-## Notes
+## AI Identify Function
 
-Vite `VITE_*` variables are exposed to browser builds. Do not store private server secrets in this frontend app. The admin password is a local UI gate, not backend authorization.
+The browser app does not call Anthropic directly. Deploy the included Supabase Edge Function and store the Anthropic API key as a Supabase secret:
+
+```bash
+supabase secrets set ANTHROPIC_API_KEY=your-anthropic-api-key
+supabase functions deploy identify-species
+```
+
+Use the deployed function URL as `VITE_AI_IDENTIFY_URL`.
+
+## Security Notes
+
+Vite `VITE_*` variables are exposed to browser builds. Do not store private server secrets in this frontend app. Authorization must be enforced with Supabase Auth, row-level security policies, and Edge Function checks.
