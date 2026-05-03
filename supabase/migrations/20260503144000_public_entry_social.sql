@@ -1,3 +1,6 @@
+alter table entries
+  add column if not exists pub boolean not null default false;
+
 create table if not exists entry_comments (
   id uuid primary key default gen_random_uuid(),
   entry_id uuid references entries(id) on delete cascade not null,
