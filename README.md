@@ -58,6 +58,27 @@ Preview the production build:
 npm run preview
 ```
 
+For Node-style hosting, start the production preview server:
+
+```bash
+npm start
+```
+
+## Hostinger Deploy
+
+Use static hosting when possible:
+
+- Install command: `npm install`
+- Build command: `npm run build`
+- Publish/output directory: `dist`
+- Do not use `npm run dev` as the build or start command. It starts a local development server and does not finish.
+
+If using Hostinger Node.js app hosting instead:
+
+- Install command: `npm install`
+- Build command: `npm run build`
+- Start command: `npm start`
+
 ## Install As An App
 
 TrailKeeper includes a web manifest and service worker. On supported browsers, open the deployed site and use the browser's install action to add it to the home screen or app launcher.
