@@ -24,12 +24,6 @@ const TYPES = [
   {id:'animal',label:'Animals',icon:'🦊',color:C.am},
   {id:'landmark',label:'Landmarks',icon:'🗿',color:'#9F1239'},
 ];
-const PARKS = [
-  {id:1,name:'Everglades NP',lat:25.3855,lng:-80.4459,icon:'🌿',color:'#166534',facilities:['🚿','🅿️','♿','🍽️']},
-  {id:2,name:'Biscayne Bay',lat:25.4686,lng:-80.3328,icon:'🌊',color:C.sky,facilities:['⛵','🤿','🅿️']},
-  {id:3,name:'Big Cypress',lat:26.000,lng:-81.000,icon:'🌲',color:C.mg,facilities:['🏕️','🚿','🅿️']},
-  {id:4,name:'Dry Tortugas',lat:24.628,lng:-82.873,icon:'🏝️',color:'#0369a1',facilities:['🤿','⛵','🏕️']},
-];
 const COMMUNITY = [];
 const E0 = [];
 const TR0 = [];
@@ -42,6 +36,42 @@ function trailDist(eids,entries){const pts=eids.map(id=>entries.find(e=>e.id===i
 function fmtDist(mi){if(mi<0.05)return Math.round(mi*5280)+' ft';if(mi<10)return mi.toFixed(2)+' mi';return mi.toFixed(1)+' mi';}
 function fmtTime(s){return Math.floor(s/60)+':'+(s%60).toString().padStart(2,'0');}
 function calcPace(t,d){return t>0&&d>0.01?(t/60/d).toFixed(1)+'/mi':'--';}
+function placeMeta(tags={}){
+  if(tags.route==='hiking'||tags.highway==='path'||tags.highway==='footway'||tags.highway==='track')return{kind:'Trail',icon:'🥾',color:C.sky};
+  if(tags.boundary==='protected_area'||tags.leisure==='nature_reserve')return{kind:'Preserve',icon:'🌲',color:C.mg};
+  if(tags.tourism==='camp_site')return{kind:'Camp',icon:'🏕️',color:C.br};
+  return{kind:'Park',icon:'🌳',color:'#166534'};
+}
+async function fetchNearbyPlaces(lat,lng,radius=16000){
+  const q=`[out:json][timeout:18];
+(
+  node(around:${radius},${lat},${lng})["leisure"~"park|nature_reserve"];
+  way(around:${radius},${lat},${lng})["leisure"~"park|nature_reserve"];
+  relation(around:${radius},${lat},${lng})["leisure"~"park|nature_reserve"];
+  node(around:${radius},${lat},${lng})["boundary"="protected_area"];
+  way(around:${radius},${lat},${lng})["boundary"="protected_area"];
+  relation(around:${radius},${lat},${lng})["boundary"="protected_area"];
+  way(around:${radius},${lat},${lng})["route"="hiking"];
+  relation(around:${radius},${lat},${lng})["route"="hiking"];
+  way(around:${radius},${lat},${lng})["highway"~"path|footway|track"]["name"];
+  node(around:${radius},${lat},${lng})["tourism"="camp_site"];
+  way(around:${radius},${lat},${lng})["tourism"="camp_site"];
+);
+out center tags 80;`;
+  const r=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:q});
+  if(!r.ok)throw new Error('Nearby lookup failed');
+  const d=await r.json();
+  const seen=new Set();
+  return (d.elements||[]).map(el=>{
+    const tags=el.tags||{};
+    const name=tags.name||tags.operator||'Unnamed place';
+    const plat=el.lat||el.center?.lat,plng=el.lon||el.center?.lon;
+    if(!plat||!plng||seen.has(name.toLowerCase()))return null;
+    seen.add(name.toLowerCase());
+    const meta=placeMeta(tags);
+    return{id:String(el.type)+'-'+el.id,name,lat:plat,lng:plng,...meta,dist:haversine(lat,lng,plat,plng),tags};
+  }).filter(Boolean).sort((a,b)=>a.dist-b.dist).slice(0,12);
+}
 
 function getActivityBounds(pts){
   if(!pts||pts.length===0)return{latMin:25.745,latMax:25.785,lngMin:-80.208,lngMax:-80.167};
@@ -138,6 +168,7 @@ function makeSB(url,key){
   return{
     signUp:(email,pw)=>req('/auth/v1/signup',{method:'POST',body:JSON.stringify({email,password:pw})}),
     signIn:(email,pw)=>req('/auth/v1/token?grant_type=password',{method:'POST',body:JSON.stringify({email,password:pw})}),
+    refresh:refresh_token=>req('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token})}),
     signOut:tok=>req('/auth/v1/logout',{method:'POST'},tok),
     get:(table,tok,q)=>req('/rest/v1/'+table+'?select=*'+(q?'&'+q:''),{},tok),
     upsert:(table,data,tok)=>req('/rest/v1/'+table,{method:'POST',body:JSON.stringify(data),headers:{'Prefer':'resolution=merge-duplicates,return=representation'}},tok),
@@ -365,7 +396,7 @@ function ActivitySummary({path,tTime,tDist,onDismiss,onSaveJournal,onShare}){
 }
 
 // ── APP SCREENS ──────────────────────────────────────────────────────────────
-function HomeScreen({entries,stats,setTab,openAdd,openEntry,onStartActivity,userLoc,locStatus,profileName}){
+function HomeScreen({entries,stats,setTab,openAdd,openEntry,onStartActivity,userLoc,locStatus,profileName,profileAvatar,nearbyPlaces,nearbyStatus}){
   const hr=new Date().getHours();
   const greet=hr<12?'🌅 Good Morning':hr<17?'☀️ Good Afternoon':'🌙 Good Evening';
   const locDot=locStatus==='granted'?'#22c55e':locStatus==='loading'?C.am:'#9CA3AF';
@@ -373,8 +404,15 @@ function HomeScreen({entries,stats,setTab,openAdd,openEntry,onStartActivity,user
   return(
     <div>
       <div style={{background:'linear-gradient(155deg,'+C.dg+' 0%,'+C.mg+' 55%,'+C.lg+' 100%)',padding:'52px 20px 26px',borderRadius:'0 0 32px 32px'}}>
-        <div style={{fontSize:11,fontWeight:700,color:C.pg,letterSpacing:'1.5px',marginBottom:4}}>TRAILKEEPER</div>
-        <div style={{fontSize:22,fontWeight:800,color:C.wh}}>{greet}, {profileName||'Explorer'}</div>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{width:42,height:42,borderRadius:15,background:'rgba(255,255,255,0.18)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,overflow:'hidden',border:'1.5px solid rgba(255,255,255,0.24)',flexShrink:0}}>
+            {profileAvatar?<img src={profileAvatar} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:'🧭'}
+          </div>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.pg,letterSpacing:'1.5px',marginBottom:4}}>TRAILKEEPER</div>
+            <div style={{fontSize:22,fontWeight:800,color:C.wh}}>{greet}, {profileName||'Explorer'}</div>
+          </div>
+        </div>
         <div style={{display:'flex',alignItems:'center',gap:6,marginTop:4}}>
           <div style={{width:7,height:7,borderRadius:'50%',background:locDot,flexShrink:0}}/>
           <div style={{fontSize:12,color:'#a7f3d0'}}>{cityName} · {new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})}</div>
@@ -414,17 +452,21 @@ function HomeScreen({entries,stats,setTab,openAdd,openEntry,onStartActivity,user
           ))}
         </div>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-          <div style={{fontWeight:700,fontSize:16,color:C.dg}}>Nearby Parks</div>
+          <div style={{fontWeight:700,fontSize:16,color:C.dg}}>Nearby Parks & Trails</div>
+          <div style={{fontSize:11,color:C.gr,fontWeight:700}}>{nearbyStatus==='loading'?'Scanning…':nearbyPlaces.length?nearbyPlaces.length+' found':''}</div>
         </div>
         <div style={{display:'flex',gap:12,overflowX:'auto',paddingBottom:4,marginBottom:20}}>
-          {PARKS.map(p=>{
-            const dist=userLoc?fmtDist(haversine(userLoc.lat,userLoc.lng,p.lat,p.lng)):null;
+          {nearbyStatus==='error'&&<div style={{background:'#FEF3C7',borderRadius:14,padding:'12px 14px',fontSize:12,color:'#92400E',fontWeight:700}}>Could not load nearby public places. Check network access and try again.</div>}
+          {nearbyStatus==='loading'&&[1,2,3].map(i=><div key={i} style={{flexShrink:0,width:148,height:126,background:C.wh,borderRadius:18,boxShadow:'0 1px 8px rgba(0,0,0,0.06)',opacity:.68}}/>)}
+          {nearbyStatus==='ready'&&nearbyPlaces.length===0&&<div style={{background:C.wh,borderRadius:14,padding:'12px 14px',fontSize:12,color:C.gr,fontWeight:700}}>No public parks or trails found nearby.</div>}
+          {nearbyPlaces.map(p=>{
+            const dist=userLoc?fmtDist(p.dist):null;
             return(
               <div key={p.id} style={{flexShrink:0,width:148,background:C.wh,borderRadius:18,padding:'14px 12px',boxShadow:'0 1px 8px rgba(0,0,0,0.06)',border:'1.5px solid '+p.color+'22',cursor:'pointer'}}>
                 <div style={{fontSize:30,marginBottom:6}}>{p.icon}</div>
                 <div style={{fontWeight:700,fontSize:13,color:C.dg,marginBottom:2}}>{p.name}</div>
                 <div style={{fontSize:11,color:C.gr,marginBottom:8}}>{dist?'📍 '+dist+' away':'📍 —'}</div>
-                <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{p.facilities.map((f,i)=><span key={i} style={{fontSize:14}}>{f}</span>)}</div>
+                <span style={{fontSize:10,fontWeight:800,color:p.color,background:p.color+'18',padding:'3px 9px',borderRadius:8}}>{p.kind}</span>
               </div>
             );
           })}
@@ -637,8 +679,9 @@ function CacheScreen({caches,setCaches,sb,session}){
   );
 }
 
-function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,profileName,setProfileName}){
+function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,profileName,setProfileName,profileAvatar,setProfileAvatar}){
   const [ptab,setPtab]=useState('stats');
+  const avatarRef=useRef();
   const [form,setForm]=useState({title:'',body:''});
   const [showForm,setShowForm]=useState(false);
   const [nameDraft,setNameDraft]=useState(profileName);
@@ -675,6 +718,10 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
   const disconnect=()=>{setGhStatus('disconnected');setGhData(null);sessionStorage.removeItem('trailkeeper_google_pkce_verifier');sessionStorage.removeItem('trailkeeper_google_oauth_state');};
   const displayName=profileName||(session?session.user.email.split('@')[0]:'Explorer');
   const saveName=()=>setProfileName(nameDraft.trim());
+  const changeAvatar=e=>{
+    const f=e.target.files?.[0];if(!f)return;
+    const r=new FileReader();r.onload=ev=>setProfileAvatar(ev.target.result);r.readAsDataURL(f);
+  };
 
   const typeData=TYPES.filter(t=>t.id!=='all').map(t=>({name:t.label,icon:t.icon,count:entries.filter(e=>e.type===t.id).length,color:t.color})).filter(d=>d.count>0);
   const total=entries.length||1;
@@ -705,7 +752,9 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
     <div>
       <div style={{background:'linear-gradient(155deg,#4c1d95,#7C3AED)',padding:'52px 20px 20px',borderRadius:'0 0 32px 32px'}}>
         <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:4}}>
-          <div style={{width:64,height:64,borderRadius:22,background:'rgba(255,255,255,0.18)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:30,border:'2.5px solid rgba(255,255,255,0.3)',flexShrink:0}}>🧭</div>
+          <div style={{width:64,height:64,borderRadius:22,background:'rgba(255,255,255,0.18)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:30,border:'2.5px solid rgba(255,255,255,0.3)',flexShrink:0,overflow:'hidden'}}>
+            {profileAvatar?<img src={profileAvatar} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:'🧭'}
+          </div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{color:C.wh,fontWeight:800,fontSize:18}}>{displayName}</div>
             <div style={{color:'#e9d5ff',fontSize:11,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{session?session.user.email:'Demo Mode'}</div>
@@ -726,7 +775,17 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
         {ptab==='stats'&&(
           <div>
             <Card style={{marginBottom:14}}>
-              <div style={{fontWeight:700,fontSize:14,color:C.dg,marginBottom:10}}>Profile Name</div>
+              <div style={{fontWeight:700,fontSize:14,color:C.dg,marginBottom:10}}>Profile</div>
+              <div style={{display:'flex',gap:12,alignItems:'center',marginBottom:12}}>
+                <div style={{width:58,height:58,borderRadius:18,background:C.pg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,overflow:'hidden',flexShrink:0}}>
+                  {profileAvatar?<img src={profileAvatar} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:'🧭'}
+                </div>
+                <div style={{flex:1,display:'flex',gap:8}}>
+                  <button onClick={()=>avatarRef.current?.click()} style={{flex:1,padding:'10px',borderRadius:12,border:'none',background:C.mg,color:C.wh,fontWeight:700,fontSize:12,cursor:'pointer'}}>Update Avatar</button>
+                  {profileAvatar&&<button onClick={()=>setProfileAvatar('')} style={{padding:'10px 12px',borderRadius:12,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:12,cursor:'pointer'}}>Remove</button>}
+                </div>
+                <input ref={avatarRef} type="file" accept="image/*" onChange={changeAvatar} style={{display:'none'}}/>
+              </div>
               <div style={{display:'flex',gap:8}}>
                 <input value={nameDraft} onChange={e=>setNameDraft(e.target.value)} placeholder="Explorer name" style={{flex:1,minWidth:0,padding:'11px 13px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:13,boxSizing:'border-box',outline:'none',fontFamily:'inherit'}}/>
                 <button onClick={saveName} style={{padding:'0 14px',borderRadius:12,border:'none',background:C.mg,color:C.wh,fontWeight:700,fontSize:13,cursor:'pointer'}}>Save</button>
@@ -904,7 +963,7 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
             </Card>
             <Card>
               <div style={{fontWeight:700,color:C.dg,marginBottom:10}}>Controls</div>
-              <button onClick={()=>{setProfileName('');setNameDraft('');}} style={{width:'100%',padding:'12px',borderRadius:14,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:14,cursor:'pointer'}}>Reset Profile Name</button>
+              <button onClick={()=>{setProfileName('');setNameDraft('');setProfileAvatar('');}} style={{width:'100%',padding:'12px',borderRadius:14,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:14,cursor:'pointer'}}>Reset Profile</button>
               <div style={{fontSize:11,color:C.gr,lineHeight:1.5,marginTop:10}}>Database connection settings are loaded from environment variables and are not editable in the app.</div>
             </Card>
           </div>
@@ -1018,6 +1077,9 @@ export default function TrailKeeper(){
   const [session,setSession]=useState(null);
   const [dbLoading,setDbLoading]=useState(false);
   const [profileName,setProfileName]=useState(()=>localStorage.getItem('trailkeeper_profile_name')||'');
+  const [profileAvatar,setProfileAvatar]=useState(()=>localStorage.getItem('trailkeeper_profile_avatar')||'');
+  const [nearbyPlaces,setNearbyPlaces]=useState([]);
+  const [nearbyStatus,setNearbyStatus]=useState('idle');
 
   const [tab,setTab]=useState('home');
   const [showAdd,setShowAdd]=useState(false);
@@ -1056,6 +1118,46 @@ export default function TrailKeeper(){
   useEffect(()=>{userLocRef.current=userLoc;},[userLoc]);
   useEffect(()=>{pausedRef.current=paused;},[paused]);
   useEffect(()=>{localStorage.setItem('trailkeeper_profile_name',profileName);},[profileName]);
+  useEffect(()=>{profileAvatar?localStorage.setItem('trailkeeper_profile_avatar',profileAvatar):localStorage.removeItem('trailkeeper_profile_avatar');},[profileAvatar]);
+
+  const loadRemoteData=async data=>{
+    setSession(data);
+    setDbLoading(true);
+    try{
+      const t=data.access_token;
+      const [e,tr,ca,jn]=await Promise.all([
+        sb.get('entries',t,'order=created_at.desc'),
+        sb.get('trails',t,'order=created_at.desc'),
+        sb.get('caches',t,'order=created_at.desc'),
+        sb.get('journal',t,'order=created_at.desc'),
+      ]);
+      setEntries(e||[]);
+      setTrails(tr||[]);
+      setCaches(ca||[]);
+      setJournal(jn||[]);
+    }catch(err){console.warn('Load error:',err);}
+    setDbLoading(false);
+    setAppMode('app');
+  };
+
+  useEffect(()=>{
+    if(!sb)return;
+    const raw=localStorage.getItem('trailkeeper_session');
+    if(!raw)return;
+    let saved=null;
+    try{saved=JSON.parse(raw);}catch{localStorage.removeItem('trailkeeper_session');return;}
+    const hydrate=async()=>{
+      try{
+        const data=saved.refresh_token?await sb.refresh(saved.refresh_token):saved;
+        localStorage.setItem('trailkeeper_session',JSON.stringify(data));
+        await loadRemoteData(data);
+      }catch(err){
+        console.warn('Session restore failed:',err);
+        localStorage.removeItem('trailkeeper_session');
+      }
+    };
+    hydrate();
+  },[sb]);
 
   useEffect(()=>{
     if(!navigator.geolocation){setLocStatus('denied');return;}
@@ -1066,6 +1168,16 @@ export default function TrailKeeper(){
       {enableHighAccuracy:true,timeout:12000,maximumAge:60000}
     );
   },[]);
+
+  useEffect(()=>{
+    if(!userLoc){setNearbyPlaces([]);setNearbyStatus('idle');return;}
+    let cancelled=false;
+    setNearbyStatus('loading');
+    fetchNearbyPlaces(userLoc.lat,userLoc.lng)
+      .then(places=>{if(!cancelled){setNearbyPlaces(places);setNearbyStatus('ready');}})
+      .catch(err=>{console.warn('Nearby places:',err);if(!cancelled){setNearbyPlaces([]);setNearbyStatus('error');}});
+    return()=>{cancelled=true;};
+  },[userLoc?.lat,userLoc?.lng]);
 
   useEffect(()=>{
     if(!tracking)return;
@@ -1107,27 +1219,13 @@ export default function TrailKeeper(){
   const openAuth=mode=>{setAuthView(mode);if(sb)setAppMode('auth');};
 
   const handleAuth=async data=>{
-    setSession(data);
-    setDbLoading(true);
-    try{
-      const t=data.access_token;
-      const [e,tr,ca,jn]=await Promise.all([
-        sb.get('entries',t,'order=created_at.desc'),
-        sb.get('trails',t,'order=created_at.desc'),
-        sb.get('caches',t,'order=created_at.desc'),
-        sb.get('journal',t,'order=created_at.desc'),
-      ]);
-      if(e&&e.length)setEntries(e);
-      if(tr&&tr.length)setTrails(tr);
-      if(ca&&ca.length)setCaches(ca);
-      if(jn&&jn.length)setJournal(jn);
-    }catch(err){console.warn('Load error:',err);}
-    setDbLoading(false);
-    setAppMode('app');
+    localStorage.setItem('trailkeeper_session',JSON.stringify(data));
+    await loadRemoteData(data);
   };
 
   const handleSignOut=async()=>{
     if(sb&&session)await sb.signOut(session.access_token).catch(()=>{});
+    localStorage.removeItem('trailkeeper_session');
     setSession(null);setEntries(E0);setTrails(TR0);setCaches(CA0);setJournal(JN0);
     setAppMode('landing');
   };
@@ -1197,11 +1295,11 @@ export default function TrailKeeper(){
   return(
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:C.bg,fontFamily:'-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif',position:'relative',boxShadow:'0 0 40px rgba(0,0,0,0.12)'}}>
       <div style={{paddingBottom:80,minHeight:'100vh'}}>
-        {tab==='home'&&<HomeScreen entries={entries} stats={stats} setTab={setTab} openAdd={handleOpenAdd} openEntry={setSelectedEntry} onStartActivity={handleStartActivity} userLoc={userLoc} locStatus={locStatus} profileName={profileName}/>}
+        {tab==='home'&&<HomeScreen entries={entries} stats={stats} setTab={setTab} openAdd={handleOpenAdd} openEntry={setSelectedEntry} onStartActivity={handleStartActivity} userLoc={userLoc} locStatus={locStatus} profileName={profileName} profileAvatar={profileAvatar} nearbyPlaces={nearbyPlaces} nearbyStatus={nearbyStatus}/>}
         {tab==='catalog'&&<CatalogScreen entries={entries} trails={trails} filter={filter} setFilter={setFilter} openAdd={handleOpenAdd} openEntry={setSelectedEntry} userLoc={userLoc}/>}
         {tab==='trails'&&<TrailsScreen trails={trails} setTrails={setTrails} entries={entries} openEntry={setSelectedEntry} onShare={setShareTrail}/>}
         {tab==='cache'&&<CacheScreen caches={caches} setCaches={setCaches} sb={sb} session={session}/>}
-        {tab==='profile'&&<ProfileScreen entries={entries} stats={stats} journal={journal} setJournal={setJournal} sb={sb} session={session} onSignOut={handleSignOut} profileName={profileName} setProfileName={setProfileName}/>}
+        {tab==='profile'&&<ProfileScreen entries={entries} stats={stats} journal={journal} setJournal={setJournal} sb={sb} session={session} onSignOut={handleSignOut} profileName={profileName} setProfileName={setProfileName} profileAvatar={profileAvatar} setProfileAvatar={setProfileAvatar}/>}
       </div>
       <BottomNav tab={tab} setTab={setTab}/>
       {showActivity&&<ActivityOverlay path={trackPath} tTime={tTime} tDist={tDist} onStop={handleStopActivity} onTogglePause={()=>setPaused(p=>!p)} paused={paused} gpsMode={gpsMode} locked={activityLocked} onToggleLock={()=>setActivityLocked(l=>!l)}/>}
