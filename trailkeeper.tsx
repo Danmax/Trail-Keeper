@@ -145,6 +145,39 @@ async function aiIdentify(desc,type,token){
   if(!r.ok)throw new Error(d.error||'AI identify failed');
   return d.suggestions||d;
 }
+function blobToDataURL(blob){
+  return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(blob);});
+}
+function loadImageFromFile(file){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{URL.revokeObjectURL(url);resolve(img);};
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Could not read image'));};
+    img.src=url;
+  });
+}
+function canvasToBlob(canvas,quality){
+  return new Promise(resolve=>canvas.toBlob(resolve,'image/webp',quality));
+}
+async function optimizeImage(file,{maxBytes=700*1024,maxDim=1800}={}){
+  const img=await loadImageFromFile(file);
+  let scale=Math.min(1,maxDim/Math.max(img.naturalWidth||img.width,img.naturalHeight||img.height));
+  for(let pass=0;pass<7;pass++){
+    const w=Math.max(1,Math.round((img.naturalWidth||img.width)*scale));
+    const h=Math.max(1,Math.round((img.naturalHeight||img.height)*scale));
+    const canvas=document.createElement('canvas');
+    canvas.width=w;canvas.height=h;
+    const ctx=canvas.getContext('2d');
+    ctx.drawImage(img,0,0,w,h);
+    for(const q of [0.86,0.76,0.66,0.56,0.46]){
+      const blob=await canvasToBlob(canvas,q);
+      if(blob&&blob.size<=maxBytes)return await blobToDataURL(blob);
+    }
+    scale*=0.78;
+  }
+  throw new Error('Image could not be optimized below 700 KB');
+}
 function makeQR(seed){
   let h=0;for(let i=0;i<seed.length;i++)h=Math.imul(31,h)+seed.charCodeAt(i)|0;
   const rng=()=>{h=Math.imul(h^h>>>16,0x45d9f3b)|0;h=Math.imul(h^h>>>16,0x45d9f3b)|0;return(h>>>0)/2**32;};
@@ -396,7 +429,7 @@ function ActivitySummary({path,tTime,tDist,onDismiss,onSaveJournal,onShare}){
 }
 
 // ── APP SCREENS ──────────────────────────────────────────────────────────────
-function HomeScreen({entries,stats,setTab,openAdd,openEntry,onStartActivity,userLoc,locStatus,profileName,profileAvatar,nearbyPlaces,nearbyStatus}){
+function HomeScreen({entries,stats,setTab,openAdd,openEntry,onStartActivity,userLoc,locStatus,profileName,profileAvatar,nearbyPlaces,nearbyStatus,onOpenPlace}){
   const hr=new Date().getHours();
   const greet=hr<12?'🌅 Good Morning':hr<17?'☀️ Good Afternoon':'🌙 Good Evening';
   const locDot=locStatus==='granted'?'#22c55e':locStatus==='loading'?C.am:'#9CA3AF';
@@ -462,7 +495,7 @@ function HomeScreen({entries,stats,setTab,openAdd,openEntry,onStartActivity,user
           {nearbyPlaces.map(p=>{
             const dist=userLoc?fmtDist(p.dist):null;
             return(
-              <div key={p.id} style={{flexShrink:0,width:148,background:C.wh,borderRadius:18,padding:'14px 12px',boxShadow:'0 1px 8px rgba(0,0,0,0.06)',border:'1.5px solid '+p.color+'22',cursor:'pointer'}}>
+              <div key={p.id} onClick={()=>onOpenPlace(p)} style={{flexShrink:0,width:148,background:C.wh,borderRadius:18,padding:'14px 12px',boxShadow:'0 1px 8px rgba(0,0,0,0.06)',border:'1.5px solid '+p.color+'22',cursor:'pointer'}}>
                 <div style={{fontSize:30,marginBottom:6}}>{p.icon}</div>
                 <div style={{fontWeight:700,fontSize:13,color:C.dg,marginBottom:2}}>{p.name}</div>
                 <div style={{fontSize:11,color:C.gr,marginBottom:8}}>{dist?'📍 '+dist+' away':'📍 —'}</div>
@@ -718,9 +751,11 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
   const disconnect=()=>{setGhStatus('disconnected');setGhData(null);sessionStorage.removeItem('trailkeeper_google_pkce_verifier');sessionStorage.removeItem('trailkeeper_google_oauth_state');};
   const displayName=profileName||(session?session.user.email.split('@')[0]:'Explorer');
   const saveName=()=>setProfileName(nameDraft.trim());
-  const changeAvatar=e=>{
+  const changeAvatar=async e=>{
     const f=e.target.files?.[0];if(!f)return;
-    const r=new FileReader();r.onload=ev=>setProfileAvatar(ev.target.result);r.readAsDataURL(f);
+    try{setProfileAvatar(await optimizeImage(f,{maxBytes:700*1024,maxDim:900}));}
+    catch(err){alert(err.message||'Could not optimize image');}
+    e.target.value='';
   };
 
   const typeData=TYPES.filter(t=>t.id!=='all').map(t=>({name:t.label,icon:t.icon,count:entries.filter(e=>e.type===t.id).length,color:t.color})).filter(d=>d.count>0);
@@ -1069,6 +1104,59 @@ function QRModal({trail,onClose}){
   );
 }
 
+function PlaceDetailModal({place,userLoc,onClose,onShare}){
+  if(!place)return null;
+  const tagRows=Object.entries(place.tags||{}).filter(([k])=>['name','leisure','boundary','route','highway','tourism','operator','website','phone','opening_hours','surface'].includes(k)).slice(0,8);
+  const directionsUrl='https://www.google.com/maps/dir/?api=1&destination='+place.lat+','+place.lng;
+  const osmUrl=place.id?'https://www.openstreetmap.org/'+place.id.replace('-','/'):'https://www.openstreetmap.org/?mlat='+place.lat+'&mlon='+place.lng+'#map=16/'+place.lat+'/'+place.lng;
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.58)',zIndex:420,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+      <div style={{width:'100%',maxWidth:430,background:C.cr,borderRadius:'28px 28px 0 0',maxHeight:'88vh',overflowY:'auto',paddingBottom:24}}>
+        <div style={{display:'flex',justifyContent:'center',padding:'12px 0'}}><div style={{width:36,height:4,borderRadius:2,background:'#D1D5DB'}}/></div>
+        <div style={{padding:'0 16px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:14,marginBottom:14}}>
+            <div style={{display:'flex',gap:12,minWidth:0}}>
+              <div style={{width:56,height:56,borderRadius:18,background:place.color+'18',display:'flex',alignItems:'center',justifyContent:'center',fontSize:30,flexShrink:0}}>{place.icon}</div>
+              <div style={{minWidth:0}}>
+                <div style={{fontWeight:900,fontSize:21,color:C.dg,lineHeight:1.15}}>{place.name}</div>
+                <div style={{display:'flex',gap:7,flexWrap:'wrap',marginTop:7}}>
+                  <span style={{fontSize:11,fontWeight:800,color:place.color,background:place.color+'18',padding:'4px 10px',borderRadius:8}}>{place.kind}</span>
+                  {userLoc&&<span style={{fontSize:11,fontWeight:800,color:C.sky,background:'#e0f2fe',padding:'4px 10px',borderRadius:8}}>{fmtDist(place.dist)} away</span>}
+                </div>
+              </div>
+            </div>
+            <button onClick={onClose} style={{border:'none',background:C.pg,color:C.dg,borderRadius:12,width:34,height:34,fontSize:18,fontWeight:800,cursor:'pointer',flexShrink:0}}>×</button>
+          </div>
+          <div style={{borderRadius:18,overflow:'hidden',border:'1px solid '+C.pg,marginBottom:14}}>
+            <RealMap points={[]} userLoc={{lat:place.lat,lng:place.lng}} height={230} zoom={15} showRoute={false}/>
+          </div>
+          <Card style={{marginBottom:12,padding:'13px 14px'}}>
+            <div style={{fontWeight:800,fontSize:13,color:C.dg,marginBottom:8}}>Location</div>
+            <div style={{fontSize:12,color:'#374151',lineHeight:1.6}}>Coordinates: {place.lat.toFixed(5)}, {place.lng.toFixed(5)}</div>
+            {userLoc&&<div style={{fontSize:12,color:'#374151',lineHeight:1.6}}>Distance from you: {fmtDist(place.dist)}</div>}
+          </Card>
+          {tagRows.length>0&&(
+            <Card style={{marginBottom:12,padding:'13px 14px'}}>
+              <div style={{fontWeight:800,fontSize:13,color:C.dg,marginBottom:8}}>Details</div>
+              {tagRows.map(([k,v])=>(
+                <div key={k} style={{display:'flex',justifyContent:'space-between',gap:12,borderTop:'1px solid '+C.pg,padding:'7px 0'}}>
+                  <span style={{fontSize:11,color:C.gr,fontWeight:800,textTransform:'uppercase'}}>{k.replace(/_/g,' ')}</span>
+                  <span style={{fontSize:12,color:C.dg,fontWeight:700,textAlign:'right',wordBreak:'break-word'}}>{v}</span>
+                </div>
+              ))}
+            </Card>
+          )}
+          <div style={{display:'flex',gap:10}}>
+            <button onClick={()=>window.open(directionsUrl,'_blank','noopener,noreferrer')} style={{flex:1,padding:'13px 8px',borderRadius:14,border:'none',background:C.mg,color:C.wh,fontWeight:800,fontSize:12,cursor:'pointer'}}>🧭 Directions</button>
+            <button onClick={()=>onShare(place)} style={{flex:1,padding:'13px 8px',borderRadius:14,border:'none',background:C.sky,color:C.wh,fontWeight:800,fontSize:12,cursor:'pointer'}}>📤 Share</button>
+            <button onClick={()=>window.open(osmUrl,'_blank','noopener,noreferrer')} style={{flex:1,padding:'13px 8px',borderRadius:14,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:800,fontSize:12,cursor:'pointer'}}>OSM</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function TrailKeeper(){
   const [appMode,setAppMode]=useState('landing'); // 'landing'|'auth'|'app'
@@ -1094,6 +1182,7 @@ export default function TrailKeeper(){
   const [photo,setPhoto]=useState(null);
   const [entryLoc,setEntryLoc]=useState(null);
   const [selectedEntry,setSelectedEntry]=useState(null);
+  const [selectedPlace,setSelectedPlace]=useState(null);
   const [shareTrail,setShareTrail]=useState(null);
   const [userLoc,setUserLoc]=useState(null);
   const [locStatus,setLocStatus]=useState('idle');
@@ -1246,7 +1335,12 @@ export default function TrailKeeper(){
       );
     } else setEntryLoc(userLoc?{lat:userLoc.lat,lng:userLoc.lng}:null);
   };
-  const handlePhoto=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>setPhoto(ev.target.result);r.readAsDataURL(f);};
+  const handlePhoto=async e=>{
+    const f=e.target.files?.[0];if(!f)return;
+    try{setPhoto(await optimizeImage(f,{maxBytes:700*1024,maxDim:1800}));}
+    catch(err){alert(err.message||'Could not optimize image');}
+    e.target.value='';
+  };
   const handleAI=async()=>{
     if(!newEntry.description)return;
     setAiLoading(true);setAiSuggestions(null);
@@ -1278,6 +1372,12 @@ export default function TrailKeeper(){
     if(navigator.share){await navigator.share({title:'TrailKeeper Activity',text}).catch(()=>{});}
     else await navigator.clipboard?.writeText(text).catch(()=>{});
   };
+  const handleSharePlace=async place=>{
+    const url='https://www.openstreetmap.org/?mlat='+place.lat+'&mlon='+place.lng+'#map=16/'+place.lat+'/'+place.lng;
+    const text=place.name+' · '+place.kind+(userLoc?' · '+fmtDist(place.dist)+' away':'')+' · '+url;
+    if(navigator.share){await navigator.share({title:place.name,text,url}).catch(()=>{});}
+    else await navigator.clipboard?.writeText(text).catch(()=>{});
+  };
 
   const stats={trees:entries.filter(e=>e.type==='tree').length,birds:entries.filter(e=>e.type==='bird').length,trails:trails.length,total:entries.length};
 
@@ -1295,7 +1395,7 @@ export default function TrailKeeper(){
   return(
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:C.bg,fontFamily:'-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif',position:'relative',boxShadow:'0 0 40px rgba(0,0,0,0.12)'}}>
       <div style={{paddingBottom:80,minHeight:'100vh'}}>
-        {tab==='home'&&<HomeScreen entries={entries} stats={stats} setTab={setTab} openAdd={handleOpenAdd} openEntry={setSelectedEntry} onStartActivity={handleStartActivity} userLoc={userLoc} locStatus={locStatus} profileName={profileName} profileAvatar={profileAvatar} nearbyPlaces={nearbyPlaces} nearbyStatus={nearbyStatus}/>}
+        {tab==='home'&&<HomeScreen entries={entries} stats={stats} setTab={setTab} openAdd={handleOpenAdd} openEntry={setSelectedEntry} onStartActivity={handleStartActivity} userLoc={userLoc} locStatus={locStatus} profileName={profileName} profileAvatar={profileAvatar} nearbyPlaces={nearbyPlaces} nearbyStatus={nearbyStatus} onOpenPlace={setSelectedPlace}/>}
         {tab==='catalog'&&<CatalogScreen entries={entries} trails={trails} filter={filter} setFilter={setFilter} openAdd={handleOpenAdd} openEntry={setSelectedEntry} userLoc={userLoc}/>}
         {tab==='trails'&&<TrailsScreen trails={trails} setTrails={setTrails} entries={entries} openEntry={setSelectedEntry} onShare={setShareTrail}/>}
         {tab==='cache'&&<CacheScreen caches={caches} setCaches={setCaches} sb={sb} session={session}/>}
@@ -1305,6 +1405,7 @@ export default function TrailKeeper(){
       {showActivity&&<ActivityOverlay path={trackPath} tTime={tTime} tDist={tDist} onStop={handleStopActivity} onTogglePause={()=>setPaused(p=>!p)} paused={paused} gpsMode={gpsMode} locked={activityLocked} onToggleLock={()=>setActivityLocked(l=>!l)}/>}
       {showSummary&&<ActivitySummary path={trackPath} tTime={tTime} tDist={tDist} onDismiss={()=>setShowSummary(false)} onSaveJournal={handleSaveJournal} onShare={handleShareActivity}/>}
       {showAdd&&<AddEntryModal entry={newEntry} setEntry={setNewEntry} photo={photo} onPhoto={handlePhoto} loading={aiLoading} suggestions={aiSuggestions} onAI={handleAI} onSave={handleSave} onClose={()=>{setShowAdd(false);setPhoto(null);setAiSuggestions(null);setEntryLoc(null);setNewEntry({type:'tree',name:'',notes:'',description:''}); }} entryLoc={entryLoc}/>}
+      {selectedPlace&&<PlaceDetailModal place={selectedPlace} userLoc={userLoc} onClose={()=>setSelectedPlace(null)} onShare={handleSharePlace}/>}
       {selectedEntry&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:300,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
           <div style={{width:'100%',maxWidth:430,background:C.cr,borderRadius:'28px 28px 0 0',maxHeight:'82vh',overflowY:'auto',paddingBottom:24}}>
