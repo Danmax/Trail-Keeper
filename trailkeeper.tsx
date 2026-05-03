@@ -46,6 +46,10 @@ function trailDist(eids,entries){const pts=eids.map(id=>entries.find(e=>e.id===i
 function fmtDist(mi){if(mi<0.05)return Math.round(mi*5280)+' ft';if(mi<10)return mi.toFixed(2)+' mi';return mi.toFixed(1)+' mi';}
 function fmtTime(s){return Math.floor(s/60)+':'+(s%60).toString().padStart(2,'0');}
 function calcPace(t,d){return t>0&&d>0.01?(t/60/d).toFixed(1)+'/mi':'--';}
+function badgeProgress(metric,stats){
+  const map={total_entries:stats.total,trees:stats.trees,birds:stats.birds,trails:stats.trails,caches:stats.caches,plants:stats.plants,fungi:stats.fungi,landmarks:stats.landmarks};
+  return map[metric]||0;
+}
 function placeMeta(tags={}){
   if(tags.route==='hiking'||tags.highway==='path'||tags.highway==='footway'||tags.highway==='track')return{kind:'Trail',icon:'🥾',color:C.sky};
   if(tags.boundary==='protected_area'||tags.leisure==='nature_reserve')return{kind:'Preserve',icon:'🌲',color:C.mg};
@@ -703,52 +707,120 @@ function TrailsScreen({trails,setTrails,entries,openEntry,onShare}){
   );
 }
 
-function CacheScreen({caches,setCaches,sb,session}){
+function CacheScreen({caches,setCaches,sb,session,userLoc}){
   const [reveal,setReveal]=useState(null);
   const [showForm,setShowForm]=useState(false);
-  const [form,setForm]=useState({name:'',clue:''});
+  const [tab,setTab]=useState('hunt');
+  const [form,setForm]=useState({name:'',clue:'',story:'',reward:'',difficulty:'Easy'});
+  const active=caches.filter(c=>!c.found);
+  const found=caches.filter(c=>c.found);
+  const score=found.reduce((sum,c)=>sum+(c.difficulty==='Hard'?30:c.difficulty==='Moderate'?20:10),0);
+  const diffColor=d=>d==='Hard'?'#E11D48':d==='Moderate'?C.am:C.lg;
   const markFound=id=>{
-    setCaches(cs=>cs.map(c=>c.id===id?{...c,found:true}:c));
-    if(sb&&session)sb.upsert('caches',{id,found:true,user_id:session.user.id},session.access_token).catch(()=>{});
+    const foundAt=new Date().toISOString();
+    setCaches(cs=>cs.map(c=>c.id===id?{...c,found:true,found_at:foundAt}:c));
+    if(sb&&session)sb.upsert('caches',{id,found:true,found_at:foundAt,user_id:session.user.id},session.access_token).catch(()=>{});
   };
   const hideCache=()=>{
     if(!form.name||!form.clue)return;
-    const newCache={id:genId(),...form,lat:25.76+(Math.random()-.5)*.02,lng:-80.19+(Math.random()-.5)*.02,found:false};
+    const base=userLoc||{lat:25.7617,lng:-80.1918};
+    const newCache={id:genId(),...form,lat:base.lat,lng:base.lng,found:false,created_at:new Date().toISOString()};
     setCaches(cs=>[...cs,newCache]);
     if(sb&&session)sb.upsert('caches',{...newCache,user_id:session.user.id},session.access_token).catch(()=>{});
-    setForm({name:'',clue:''});setShowForm(false);
+    setForm({name:'',clue:'',story:'',reward:'',difficulty:'Easy'});setShowForm(false);setTab('hunt');
   };
   return(
     <div>
       <div style={{background:'linear-gradient(155deg,#92400e,'+C.am+')',padding:'52px 20px 24px',borderRadius:'0 0 32px 32px'}}>
-        <div style={{color:C.wh,fontWeight:800,fontSize:22}}>📦 Geocache</div>
-        <div style={{color:'#fef3c7',fontSize:13}}>{caches.filter(c=>c.found).length} found · {caches.filter(c=>!c.found).length} to discover</div>
+        <div style={{color:C.wh,fontWeight:800,fontSize:22}}>📦 Cache Quest</div>
+        <div style={{color:'#fef3c7',fontSize:13}}>{found.length} found · {active.length} active · {score} points</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:16}}>
+          {[
+            {id:'hunt',label:'Hunt',icon:'🧭'},
+            {id:'hide',label:'Hide',icon:'🎯'},
+            {id:'rules',label:'How it works',icon:'❔'},
+          ].map(x=>(
+            <button key={x.id} onClick={()=>setTab(x.id)} style={{padding:'9px 6px',borderRadius:12,border:'none',background:tab===x.id?C.wh:'rgba(255,255,255,0.18)',color:tab===x.id?'#92400e':C.wh,fontWeight:800,fontSize:12,cursor:'pointer'}}>{x.icon} {x.label}</button>
+          ))}
+        </div>
       </div>
       <div style={{padding:'16px 16px 80px'}}>
-        {caches.map(c=>(
-          <Card key={c.id} style={{marginBottom:12,opacity:c.found?.88:1}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-              <div><div style={{fontWeight:800,fontSize:16,color:C.dg}}>{c.found?'✅ ':'📦 '}{c.name}</div><div style={{fontSize:11,color:C.gr,marginTop:2}}>📍 {c.lat.toFixed(5)}, {c.lng.toFixed(5)}</div></div>
-              {c.found&&<span style={{fontSize:9,fontWeight:700,background:C.pg,color:C.dg,padding:'3px 8px',borderRadius:8}}>FOUND</span>}
+        {tab==='rules'&&(
+          <div>
+            <Card style={{marginBottom:12}}>
+              <div style={{fontWeight:900,fontSize:18,color:C.dg,marginBottom:8}}>How Cache Quest Works</div>
+              {[
+                ['1','Hide a cache','Create a named challenge at your current location with a clue, short story, difficulty, and optional reward.'],
+                ['2','Hunters use clues','Other players read the clue, navigate to the coordinates, and search responsibly.'],
+                ['3','Claim the find','When found, mark it complete to earn points and keep a record in your quest log.'],
+              ].map(([n,t,b])=>(
+                <div key={n} style={{display:'flex',gap:10,padding:'10px 0',borderTop:'1px solid '+C.pg}}>
+                  <div style={{width:28,height:28,borderRadius:10,background:C.am,color:C.wh,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,flexShrink:0}}>{n}</div>
+                  <div><div style={{fontWeight:800,fontSize:13,color:C.dg}}>{t}</div><div style={{fontSize:12,color:'#374151',lineHeight:1.55}}>{b}</div></div>
+                </div>
+              ))}
+            </Card>
+            <Card>
+              <div style={{fontWeight:800,color:C.dg,marginBottom:6}}>Responsible Hiding</div>
+              <div style={{fontSize:12,color:'#374151',lineHeight:1.7}}>Keep caches public-safe, weatherproof, and respectful. Do not hide items on private property, protected habitats, dangerous terrain, or places where searching would disturb others.</div>
+            </Card>
+          </div>
+        )}
+        {tab==='hunt'&&(
+          <div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:14}}>
+              {[{l:'Active',v:active.length,ic:'📦'},{l:'Found',v:found.length,ic:'✅'},{l:'Points',v:score,ic:'⭐'}].map(s=>(
+                <Card key={s.l} style={{textAlign:'center',padding:'12px 8px'}}>
+                  <div style={{fontSize:22}}>{s.ic}</div><div style={{fontSize:22,fontWeight:900,color:C.am}}>{s.v}</div><div style={{fontSize:10,color:C.gr,fontWeight:800}}>{s.l}</div>
+                </Card>
+              ))}
             </div>
-            {!c.found&&<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={()=>setReveal(reveal===c.id?null:c.id)} style={{flex:1,padding:'10px',borderRadius:12,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:12,cursor:'pointer'}}>{reveal===c.id?'🙈 Hide':'🔍 View Clue'}</button><button onClick={()=>markFound(c.id)} style={{flex:1,padding:'10px',borderRadius:12,border:'none',background:C.am,color:C.wh,fontWeight:700,fontSize:12,cursor:'pointer'}}>✓ Found It!</button></div>}
-            {reveal===c.id&&!c.found&&<div style={{marginTop:12,background:'#fffbeb',borderRadius:12,padding:12,border:'1px dashed '+C.am}}><div style={{fontSize:10,fontWeight:700,color:C.am,marginBottom:4}}>🗝️ CLUE</div><div style={{fontSize:13,color:C.dg,lineHeight:1.6,fontStyle:'italic'}}>{c.clue}</div></div>}
-            {c.found&&<div style={{fontSize:12,color:C.gr,marginTop:8,fontStyle:'italic'}}>"{c.clue}"</div>}
-          </Card>
-        ))}
-        {showForm?(
-          <Card>
-            <div style={{fontWeight:800,fontSize:16,color:C.dg,marginBottom:12}}>🎯 Hide a Cache</div>
-            <input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Cache name…" style={{width:'100%',padding:'11px 13px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:13,marginBottom:10,boxSizing:'border-box',outline:'none',fontFamily:'inherit'}}/>
-            <textarea value={form.clue} onChange={e=>setForm({...form,clue:e.target.value})} placeholder="Write a mystery clue…" style={{width:'100%',padding:'11px 13px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:13,height:80,resize:'none',boxSizing:'border-box',outline:'none',fontFamily:'inherit'}}/>
-            <div style={{display:'flex',gap:8,marginTop:10}}>
-              <button onClick={()=>setShowForm(false)} style={{flex:1,padding:'11px',borderRadius:12,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:12,cursor:'pointer'}}>Cancel</button>
-              <button onClick={hideCache} style={{flex:1,padding:'11px',borderRadius:12,border:'none',background:C.am,color:C.wh,fontWeight:700,fontSize:12,cursor:'pointer'}}>📍 Hide Cache</button>
-            </div>
-          </Card>
-        ):(
-          <div onClick={()=>setShowForm(true)} style={{background:'#fffbeb',borderRadius:16,padding:'14px 16px',textAlign:'center',cursor:'pointer',border:'2px dashed '+C.am}}>
-            <span style={{fontWeight:700,color:C.am,fontSize:14}}>+ Hide a New Cache</span>
+            {caches.length===0&&<div style={{textAlign:'center',padding:'38px 10px',color:C.gr}}><div style={{fontSize:46}}>📦</div><div style={{fontWeight:900,color:C.dg,marginTop:8}}>No caches yet</div><div style={{fontSize:12,marginTop:5}}>Hide the first one to start a local challenge.</div></div>}
+            {caches.map(c=>{
+              const dist=userLoc?fmtDist(haversine(userLoc.lat,userLoc.lng,c.lat,c.lng)):null;
+              const points=c.difficulty==='Hard'?30:c.difficulty==='Moderate'?20:10;
+              return(
+                <Card key={c.id} style={{marginBottom:12,opacity:c.found?.82:1,border:'1.5px solid '+(c.found?C.pg:diffColor(c.difficulty)+'33')}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:900,fontSize:16,color:C.dg}}>{c.found?'✅ ':'📦 '}{c.name}</div>
+                      <div style={{fontSize:11,color:C.gr,marginTop:3}}>📍 {dist?dist+' away · ':''}{c.lat.toFixed(5)}, {c.lng.toFixed(5)}</div>
+                    </div>
+                    <div style={{textAlign:'right',flexShrink:0}}>
+                      <div style={{fontSize:10,fontWeight:900,color:diffColor(c.difficulty),background:diffColor(c.difficulty)+'18',padding:'3px 8px',borderRadius:8}}>{c.difficulty||'Easy'}</div>
+                      <div style={{fontSize:10,color:C.gr,fontWeight:800,marginTop:4}}>{points} pts</div>
+                    </div>
+                  </div>
+                  {c.story&&<div style={{fontSize:12,color:'#374151',lineHeight:1.55,marginTop:10}}>{c.story}</div>}
+                  {!c.found&&<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={()=>setReveal(reveal===c.id?null:c.id)} style={{flex:1,padding:'10px',borderRadius:12,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:800,fontSize:12,cursor:'pointer'}}>{reveal===c.id?'🙈 Hide Clue':'🔍 Reveal Clue'}</button><button onClick={()=>markFound(c.id)} style={{flex:1,padding:'10px',borderRadius:12,border:'none',background:C.am,color:C.wh,fontWeight:800,fontSize:12,cursor:'pointer'}}>🏁 Claim Find</button></div>}
+                  {reveal===c.id&&!c.found&&<div style={{marginTop:12,background:'#fffbeb',borderRadius:12,padding:12,border:'1px dashed '+C.am}}><div style={{fontSize:10,fontWeight:900,color:C.am,marginBottom:4}}>MYSTERY CLUE</div><div style={{fontSize:13,color:C.dg,lineHeight:1.6,fontStyle:'italic'}}>{c.clue}</div>{c.reward&&<div style={{fontSize:12,color:C.br,fontWeight:800,marginTop:8}}>Reward: {c.reward}</div>}</div>}
+                  {c.found&&<div style={{fontSize:12,color:C.gr,marginTop:9,fontStyle:'italic'}}>Solved clue: "{c.clue}"</div>}
+                </Card>
+              );
+            })}
+          </div>
+        )}
+        {tab==='hide'&&(
+          <div>
+            {!showForm&&<Card style={{marginBottom:12,background:'#fffbeb',border:'1.5px dashed '+C.am}} onClick={()=>setShowForm(true)}>
+              <div style={{fontWeight:900,fontSize:17,color:'#92400e'}}>🎯 Set Up a Cache</div>
+              <div style={{fontSize:12,color:'#78350f',lineHeight:1.55,marginTop:5}}>Use your current GPS location, write a clue, set difficulty, and create a local challenge for other explorers.</div>
+            </Card>}
+            {showForm&&(
+              <Card>
+                <div style={{fontWeight:900,fontSize:16,color:C.dg,marginBottom:12}}>🎯 Hide a Cache</div>
+                <div style={{background:userLoc?C.pg:'#FEF3C7',borderRadius:12,padding:'8px 12px',fontSize:12,fontWeight:700,color:userLoc?C.dg:'#92400E',marginBottom:12}}>{userLoc?'Using your current location: '+userLoc.lat.toFixed(5)+', '+userLoc.lng.toFixed(5):'Waiting for location. A fallback location will be used if GPS is unavailable.'}</div>
+                <input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Cache name…" style={{width:'100%',padding:'11px 13px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:13,marginBottom:10,boxSizing:'border-box',outline:'none',fontFamily:'inherit'}}/>
+                <textarea value={form.story} onChange={e=>setForm({...form,story:e.target.value})} placeholder="Set the scene (optional story)…" style={{width:'100%',padding:'11px 13px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:13,height:64,resize:'none',boxSizing:'border-box',outline:'none',fontFamily:'inherit',marginBottom:10}}/>
+                <textarea value={form.clue} onChange={e=>setForm({...form,clue:e.target.value})} placeholder="Write the mystery clue…" style={{width:'100%',padding:'11px 13px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:13,height:82,resize:'none',boxSizing:'border-box',outline:'none',fontFamily:'inherit',marginBottom:10}}/>
+                <input value={form.reward} onChange={e=>setForm({...form,reward:e.target.value})} placeholder="Reward or note (optional)…" style={{width:'100%',padding:'11px 13px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:13,marginBottom:10,boxSizing:'border-box',outline:'none',fontFamily:'inherit'}}/>
+                <div style={{display:'flex',gap:8,marginBottom:12}}>{['Easy','Moderate','Hard'].map(d=><button key={d} onClick={()=>setForm({...form,difficulty:d})} style={{flex:1,padding:'9px',borderRadius:11,border:'none',background:form.difficulty===d?diffColor(d):diffColor(d)+'18',color:form.difficulty===d?C.wh:diffColor(d),fontWeight:900,fontSize:12,cursor:'pointer'}}>{d}</button>)}</div>
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={()=>setShowForm(false)} style={{flex:1,padding:'12px',borderRadius:13,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:800,fontSize:12,cursor:'pointer'}}>Cancel</button>
+                  <button onClick={hideCache} style={{flex:1,padding:'12px',borderRadius:13,border:'none',background:C.am,color:C.wh,fontWeight:900,fontSize:12,cursor:'pointer'}}>📍 Place Cache</button>
+                </div>
+              </Card>
+            )}
           </div>
         )}
       </div>
@@ -756,10 +828,11 @@ function CacheScreen({caches,setCaches,sb,session}){
   );
 }
 
-function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,profileName,setProfileName,profileAvatar,setProfileAvatar}){
+function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,profileName,setProfileName,profileAvatar,setProfileAvatar,badges,isAdmin,onCreateBadge}){
   const [ptab,setPtab]=useState('stats');
   const avatarRef=useRef();
   const [form,setForm]=useState({title:'',body:''});
+  const [badgeForm,setBadgeForm]=useState({icon:'🏅',label:'',description:'',metric:'total_entries',target_count:1});
   const [showForm,setShowForm]=useState(false);
   const [nameDraft,setNameDraft]=useState(profileName);
   const [ghStatus,setGhStatus]=useState('disconnected');
@@ -810,14 +883,7 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
     {label:"New species ID'd",cur:entries.filter(e=>e.species).length,target:10,icon:'🌱',color:C.am},
     {label:'Caches found',cur:0,target:5,icon:'📦',color:C.br},
   ];
-  const badges=[
-    {ic:'🌳',lbl:'Tree Hugger',desc:stats.trees+' trees',ok:stats.trees>0},
-    {ic:'🐦',lbl:'Bird Watcher',desc:'First bird',ok:stats.birds>0},
-    {ic:'🗺️',lbl:'Trailblazer',desc:'Trail created',ok:stats.trails>0},
-    {ic:'📦',lbl:'Cache Hunter',desc:'Find 3 caches',ok:false},
-    {ic:'🍄',lbl:'Forager',desc:'Log 5 fungi',ok:false},
-    {ic:'⭐',lbl:'Explorer Pro',desc:stats.total+' finds',ok:stats.total>=5},
-  ];
+  const visibleBadges=(badges||[]).filter(b=>b.active!==false);
 
   const saveJ=()=>{
     if(!form.title||!form.body)return;
@@ -825,6 +891,11 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
     setJournal(js=>[j,...js]);
     if(sb&&session)sb.upsert('journal',{...j,user_id:session.user.id},session.access_token).catch(()=>{});
     setForm({title:'',body:''});setShowForm(false);
+  };
+  const saveBadge=()=>{
+    if(!badgeForm.label.trim())return;
+    onCreateBadge({...badgeForm,target_count:Number(badgeForm.target_count)||1,active:true});
+    setBadgeForm({icon:'🏅',label:'',description:'',metric:'total_entries',target_count:1});
   };
 
   return(
@@ -845,7 +916,9 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
         </div>
         {!session&&<div style={{marginTop:10,background:'rgba(255,255,255,0.12)',borderRadius:10,padding:'8px 12px',fontSize:11,color:'#e9d5ff'}}>💡 Connect Supabase to sync across devices</div>}
         <div style={{display:'flex',gap:6,overflowX:'auto',marginTop:16}}>
-          {[['stats','📊 Stats'],['badges','🏅 Badges'],['journal','📔 Journal'],['gear','⌚ Gear'],['settings','⚙️ Settings']].map(([id,lbl])=>(
+          {[
+            ['stats','📊 Stats'],['badges','🏅 Badges'],['journal','📔 Journal'],['gear','⌚ Gear'],['settings','⚙️ Settings'],...(isAdmin?[['admin','🛡️ Admin']]:[])
+          ].map(([id,lbl])=>(
             <div key={id} onClick={()=>setPtab(id)} style={{flexShrink:0,padding:'6px 12px',borderRadius:10,fontSize:12,fontWeight:700,cursor:'pointer',background:ptab===id?C.wh:'rgba(255,255,255,0.18)',color:ptab===id?'#7C3AED':C.wh}}>{lbl}</div>
           ))}
         </div>
@@ -930,14 +1003,16 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
         )}
         {ptab==='badges'&&(
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-            {badges.map(b=>(
-              <Card key={b.lbl} style={{textAlign:'center',padding:'20px 12px',opacity:b.ok?1:.4}}>
-                <div style={{fontSize:34,marginBottom:6,filter:b.ok?'none':'grayscale(1)'}}>{b.ic}</div>
-                <div style={{fontWeight:700,fontSize:13,color:C.dg}}>{b.lbl}</div>
-                <div style={{fontSize:11,color:C.gr,marginTop:3}}>{b.desc}</div>
-                {b.ok&&<div style={{fontSize:9,color:C.mg,fontWeight:700,marginTop:6,background:C.pg,padding:'2px 8px',borderRadius:8,display:'inline-block'}}>✓ EARNED</div>}
+            {visibleBadges.length===0&&<div style={{gridColumn:'1 / -1',textAlign:'center',padding:'34px 8px',color:C.gr}}><div style={{fontSize:42}}>🏅</div><div style={{fontWeight:800,color:C.dg,marginTop:6}}>No badges yet</div><div style={{fontSize:12,marginTop:4}}>Admins can create badge definitions.</div></div>}
+            {visibleBadges.map(b=>{const cur=badgeProgress(b.metric,stats),target=Number(b.target_count)||1,ok=cur>=target;return(
+              <Card key={b.id||b.label} style={{textAlign:'center',padding:'20px 12px',opacity:ok?1:.45}}>
+                <div style={{fontSize:34,marginBottom:6,filter:ok?'none':'grayscale(1)'}}>{b.icon||'🏅'}</div>
+                <div style={{fontWeight:700,fontSize:13,color:C.dg}}>{b.label}</div>
+                <div style={{fontSize:11,color:C.gr,marginTop:3}}>{b.description||cur+'/'+target}</div>
+                <div style={{fontSize:10,color:C.gr,fontWeight:700,marginTop:5}}>{cur}/{target}</div>
+                {ok&&<div style={{fontSize:9,color:C.mg,fontWeight:700,marginTop:6,background:C.pg,padding:'2px 8px',borderRadius:8,display:'inline-block'}}>✓ EARNED</div>}
               </Card>
-            ))}
+            );})}
           </div>
         )}
         {ptab==='journal'&&(
@@ -1045,6 +1120,33 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
               <button onClick={()=>{setProfileName('');setNameDraft('');setProfileAvatar('');}} style={{width:'100%',padding:'12px',borderRadius:14,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:14,cursor:'pointer'}}>Reset Profile</button>
               <div style={{fontSize:11,color:C.gr,lineHeight:1.5,marginTop:10}}>Database connection settings are loaded from environment variables and are not editable in the app.</div>
             </Card>
+          </div>
+        )}
+        {ptab==='admin'&&isAdmin&&(
+          <div>
+            <Card style={{marginBottom:12}}>
+              <div style={{fontWeight:800,fontSize:16,color:C.dg,marginBottom:10}}>Create Badge</div>
+              <div style={{display:'flex',gap:8,marginBottom:10}}>
+                <input value={badgeForm.icon} onChange={e=>setBadgeForm({...badgeForm,icon:e.target.value})} placeholder="🏅" style={{width:58,padding:'11px 10px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:18,boxSizing:'border-box',outline:'none',fontFamily:'inherit',textAlign:'center'}}/>
+                <input value={badgeForm.label} onChange={e=>setBadgeForm({...badgeForm,label:e.target.value})} placeholder="Badge name" style={{flex:1,minWidth:0,padding:'11px 13px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:13,boxSizing:'border-box',outline:'none',fontFamily:'inherit'}}/>
+              </div>
+              <input value={badgeForm.description} onChange={e=>setBadgeForm({...badgeForm,description:e.target.value})} placeholder="Short description" style={{width:'100%',padding:'11px 13px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:13,marginBottom:10,boxSizing:'border-box',outline:'none',fontFamily:'inherit'}}/>
+              <div style={{display:'flex',gap:8,marginBottom:12}}>
+                <select value={badgeForm.metric} onChange={e=>setBadgeForm({...badgeForm,metric:e.target.value})} style={{flex:1,padding:'11px 13px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:13,background:C.wh,color:C.dg,fontFamily:'inherit'}}>
+                  {[
+                    ['total_entries','Total discoveries'],['trees','Trees'],['birds','Birds'],['plants','Plants'],['fungi','Fungi'],['landmarks','Landmarks'],['trails','Trails'],['caches','Caches'],
+                  ].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                </select>
+                <input type="number" min="1" value={badgeForm.target_count} onChange={e=>setBadgeForm({...badgeForm,target_count:e.target.value})} style={{width:82,padding:'11px 10px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:13,boxSizing:'border-box',outline:'none',fontFamily:'inherit'}}/>
+              </div>
+              <button onClick={saveBadge} style={{width:'100%',padding:'13px',borderRadius:14,border:'none',background:C.mg,color:C.wh,fontWeight:800,fontSize:14,cursor:'pointer'}}>Save Badge</button>
+            </Card>
+            {(badges||[]).map(b=>(
+              <Card key={b.id||b.label} style={{marginBottom:10,display:'flex',alignItems:'center',gap:12}}>
+                <div style={{fontSize:28,width:42,height:42,borderRadius:14,background:C.pg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{b.icon||'🏅'}</div>
+                <div style={{flex:1,minWidth:0}}><div style={{fontWeight:800,fontSize:14,color:C.dg}}>{b.label}</div><div style={{fontSize:11,color:C.gr}}>{b.metric} · target {b.target_count}</div></div>
+              </Card>
+            ))}
           </div>
         )}
       </div>
@@ -1219,6 +1321,8 @@ export default function TrailKeeper(){
   const [dbLoading,setDbLoading]=useState(false);
   const [profileName,setProfileName]=useState(()=>localStorage.getItem('trailkeeper_profile_name')||'');
   const [profileAvatar,setProfileAvatar]=useState(()=>localStorage.getItem('trailkeeper_profile_avatar')||'');
+  const [profile,setProfile]=useState(null);
+  const [badges,setBadges]=useState([]);
   const [nearbyPlaces,setNearbyPlaces]=useState([]);
   const [nearbyStatus,setNearbyStatus]=useState('idle');
 
@@ -1270,13 +1374,26 @@ export default function TrailKeeper(){
     setDbLoading(true);
     try{
       const t=data.access_token;
-      const [e,tr,ca,jn,pub]=await Promise.all([
+      const [e,tr,ca,jn,pub,prof,bg]=await Promise.all([
         sb.get('entries',t,'user_id=eq.'+data.user.id+'&order=created_at.desc'),
         sb.get('trails',t,'order=created_at.desc'),
         sb.get('caches',t,'order=created_at.desc'),
         sb.get('journal',t,'order=created_at.desc'),
         sb.get('entries',t,'pub=eq.true&order=created_at.desc').catch(()=>[]),
+        sb.get('profiles',t,'user_id=eq.'+data.user.id).catch(()=>[]),
+        sb.get('badges',t,'active=eq.true&order=created_at.desc').catch(()=>[]),
       ]);
+      const existingProfile=prof?.[0]||null;
+      if(existingProfile){
+        setProfile(existingProfile);
+        if(existingProfile.display_name)setProfileName(existingProfile.display_name);
+        if(existingProfile.avatar)setProfileAvatar(existingProfile.avatar);
+      } else {
+        const nextProfile={user_id:data.user.id,display_name:profileName||data.user.email?.split('@')[0]||'',avatar:profileAvatar||'',is_admin:false};
+        setProfile(nextProfile);
+        sb.upsert('profiles',nextProfile,t).catch(()=>{});
+      }
+      setBadges(bg||[]);
       setEntries(e||[]);
       setPublicEntries((pub||[]).filter(x=>x.user_id!==data.user?.id));
       setTrails(tr||[]);
@@ -1327,6 +1444,13 @@ export default function TrailKeeper(){
   },[userLoc?.lat,userLoc?.lng]);
 
   useEffect(()=>{
+    if(!sb||!session)return;
+    const data={user_id:session.user.id,display_name:profileName,avatar:profileAvatar};
+    sb.upsert('profiles',data,session.access_token).catch(e=>console.warn('Profile sync:',e));
+    setProfile(p=>p?{...p,...data}:p);
+  },[profileName,profileAvatar,session?.user?.id]);
+
+  useEffect(()=>{
     if(!tracking)return;
     const base=userLocRef.current||{lat:25.762,lng:-80.196};
     prevPosRef.current={lat:base.lat,lng:base.lng};
@@ -1373,7 +1497,7 @@ export default function TrailKeeper(){
   const handleSignOut=async()=>{
     if(sb&&session)await sb.signOut(session.access_token).catch(()=>{});
     localStorage.removeItem('trailkeeper_session');
-    setSession(null);setEntries(E0);setPublicEntries([]);setTrails(TR0);setCaches(CA0);setJournal(JN0);
+    setSession(null);setProfile(null);setBadges([]);setEntries(E0);setPublicEntries([]);setTrails(TR0);setCaches(CA0);setJournal(JN0);
     setAppMode('landing');
   };
 
@@ -1425,7 +1549,13 @@ export default function TrailKeeper(){
     const j={id:genId(),date:new Date().toISOString().split('T')[0],title:label+' — '+fmtDist(tDist),body:'Completed '+label.toLowerCase()+' '+fmtDist(tDist)+' in '+fmtTime(tTime)+'. Pace: '+calcPace(tTime,tDist)+'. '+trackPath.length+' GPS points recorded.'};
     setJournal(js=>[j,...js]);
     sync('journal',j);
+    sync('activities',{id:genId(),activity_type:activityType?.id||'activity',activity_label:label,date:new Date().toISOString().split('T')[0],duration_seconds:tTime,distance_miles:tDist,pace:calcPace(tTime,tDist),path:trackPath});
     setShowSummary(false);
+  };
+  const handleCreateBadge=data=>{
+    const b={id:genId(),...data};
+    setBadges(bs=>[b,...bs]);
+    sync('badges',b);
   };
   const handleShareActivity=async()=>{
     const label=activityType?.label||'Activity';
@@ -1440,7 +1570,7 @@ export default function TrailKeeper(){
     else await navigator.clipboard?.writeText(text).catch(()=>{});
   };
 
-  const stats={trees:entries.filter(e=>e.type==='tree').length,birds:entries.filter(e=>e.type==='bird').length,trails:trails.length,total:entries.length};
+  const stats={trees:entries.filter(e=>e.type==='tree').length,birds:entries.filter(e=>e.type==='bird').length,plants:entries.filter(e=>e.type==='plant').length,fungi:entries.filter(e=>e.type==='fungi').length,landmarks:entries.filter(e=>e.type==='landmark').length,caches:caches.filter(c=>c.found).length,trails:trails.length,total:entries.length};
 
   // ── Routing ──
   if(appMode==='landing')return <LandingScreen onAuthMode={openAuth} canAuth={!!sb}/>;
@@ -1459,8 +1589,8 @@ export default function TrailKeeper(){
         {tab==='home'&&<HomeScreen entries={entries} stats={stats} setTab={setTab} openAdd={handleOpenAdd} openEntry={setSelectedEntry} onStartActivity={handleStartActivity} userLoc={userLoc} locStatus={locStatus} profileName={profileName} profileAvatar={profileAvatar} nearbyPlaces={nearbyPlaces} nearbyStatus={nearbyStatus} onOpenPlace={setSelectedPlace}/>}
         {tab==='catalog'&&<CatalogScreen entries={entries} trails={trails} publicEntries={publicEntries} filter={filter} setFilter={setFilter} openAdd={handleOpenAdd} openEntry={setSelectedEntry} userLoc={userLoc}/>}
         {tab==='trails'&&<TrailsScreen trails={trails} setTrails={setTrails} entries={entries} openEntry={setSelectedEntry} onShare={setShareTrail}/>}
-        {tab==='cache'&&<CacheScreen caches={caches} setCaches={setCaches} sb={sb} session={session}/>}
-        {tab==='profile'&&<ProfileScreen entries={entries} stats={stats} journal={journal} setJournal={setJournal} sb={sb} session={session} onSignOut={handleSignOut} profileName={profileName} setProfileName={setProfileName} profileAvatar={profileAvatar} setProfileAvatar={setProfileAvatar}/>}
+        {tab==='cache'&&<CacheScreen caches={caches} setCaches={setCaches} sb={sb} session={session} userLoc={userLoc}/>}
+        {tab==='profile'&&<ProfileScreen entries={entries} stats={stats} journal={journal} setJournal={setJournal} sb={sb} session={session} onSignOut={handleSignOut} profileName={profileName} setProfileName={setProfileName} profileAvatar={profileAvatar} setProfileAvatar={setProfileAvatar} badges={badges} isAdmin={!!profile?.is_admin} onCreateBadge={handleCreateBadge}/>}
       </div>
       <BottomNav tab={tab} setTab={setTab}/>
       {showActivityPicker&&<ActivityTypeModal onSelect={beginActivity} onClose={()=>setShowActivityPicker(false)}/>}

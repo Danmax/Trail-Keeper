@@ -85,7 +85,15 @@ TrailKeeper includes a web manifest and service worker. On supported browsers, o
 
 ## Supabase Schema
 
-Database connection values are loaded from environment variables. Apply the SQL files in `supabase/migrations` before relying on synced entries, trails, caches, journal data, or public map discoveries.
+Database connection values are loaded from environment variables. Apply the SQL files in `supabase/migrations` before relying on synced entries, trails, caches, journal data, profile data, activity history, badges, or public map discoveries.
+
+To enable the in-app admin badge tools, mark a user profile as admin in Supabase after the user signs in once:
+
+```sql
+update profiles
+set is_admin = true
+where user_id = 'USER_UUID_HERE';
+```
 
 ## AI Identify Function
 
