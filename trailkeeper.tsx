@@ -30,29 +30,11 @@ const PARKS = [
   {id:3,name:'Big Cypress',lat:26.000,lng:-81.000,icon:'🌲',color:C.mg,facilities:['🏕️','🚿','🅿️']},
   {id:4,name:'Dry Tortugas',lat:24.628,lng:-82.873,icon:'🏝️',color:'#0369a1',facilities:['🤿','⛵','🏕️']},
 ];
-const COMMUNITY = [
-  {id:'c1',name:'Shark Valley Loop',explorer:'Maria G.',avatar:'🌺',dist:15.0,diff:'Moderate',likes:47,saved:false,description:'Incredible gator sightings along the canal.',tags:['wetlands','birds','alligators']},
-  {id:'c2',name:'Key Biscayne Coastal',explorer:'James R.',avatar:'🦅',dist:4.2,diff:'Easy',likes:83,saved:false,description:'Stunning sunset views from the lighthouse.',tags:['coastal','sunset','birds']},
-  {id:'c3',name:'Pine Island Ridge',explorer:'Sofia M.',avatar:'🌴',dist:2.8,diff:'Easy',likes:31,saved:false,description:'Old growth pines and scrub.',tags:['forest','wildlife','fungi']},
-  {id:'c4',name:'Anhinga Trail',explorer:'Carlos V.',avatar:'🐦',dist:0.8,diff:'Easy',likes:124,saved:false,description:'Best wildlife trail in the Everglades.',tags:['birds','wetlands','photography']},
-];
-const E0 = [
-  {id:'demo-1',type:'tree',name:'Live Oak',species:'Quercus virginiana',lat:25.762,lng:-80.196,date:'2026-04-28',notes:'Large canopy, Spanish moss hanging from branches',photo:null},
-  {id:'demo-2',type:'bird',name:'Roseate Spoonbill',species:'Platalea ajaja',lat:25.776,lng:-80.174,date:'2026-04-27',notes:'Feeding in shallow tidal water at dusk',photo:null},
-  {id:'demo-3',type:'plant',name:'Saw Palmetto',species:'Serenoa repens',lat:25.751,lng:-80.201,date:'2026-04-25',notes:'Native Florida scrub, dense thicket',photo:null},
-  {id:'demo-4',type:'fungi',name:'Turkey Tail',species:'Trametes versicolor',lat:25.769,lng:-80.183,date:'2026-04-22',notes:'Beautiful concentric rings on fallen log',photo:null},
-  {id:'demo-5',type:'animal',name:'Gopher Tortoise',species:'Gopherus polyphemus',lat:25.757,lng:-80.191,date:'2026-04-20',notes:'Burrow entrance visible nearby',photo:null},
-  {id:'demo-6',type:'landmark',name:'Old Banyan Tree',species:null,lat:25.780,lng:-80.172,date:'2026-04-18',notes:'Historic landmark, estimated 120 years old',photo:null},
-];
-const TR0 = [
-  {id:'trail-1',name:'Everglades Edge Loop',dist:3.2,eids:['demo-1','demo-3','demo-5'],diff:'Easy',description:'Scenic loop through native Florida scrub and wetlands',pub:true},
-  {id:'trail-2',name:'Biscayne Bay Birding',dist:1.8,eids:['demo-2','demo-6'],diff:'Easy',description:'Coastal trail with incredible shore bird sightings',pub:true},
-];
-const CA0 = [
-  {id:'cache-1',name:'Banyan Secrets',lat:25.780,lng:-80.172,clue:'Beneath the roots that arch like bridges, look for what the last explorer left behind.',found:false},
-  {id:'cache-2',name:'Mangrove Mystery',lat:25.757,lng:-80.191,clue:'Where salt meets fresh water, beneath the tangled prop knees.',found:true},
-];
-const JN0 = [{id:'journal-1',date:'2026-04-28',title:'Morning at the Everglades',body:'Golden hour filtering through the mangroves. Spotted the spoonbill again near marker 3.'}];
+const COMMUNITY = [];
+const E0 = [];
+const TR0 = [];
+const CA0 = [];
+const JN0 = [];
 
 function genId(){return typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:r&0x3|0x8).toString(16);});}
 function haversine(a,b,c,d){const R=3958.8,dLat=(c-a)*Math.PI/180,dLng=(d-b)*Math.PI/180;const x=Math.sin(dLat/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dLng/2)**2;return +(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))).toFixed(5);}
@@ -144,50 +126,6 @@ function makeQR(seed){
 }
 
 // ── SUPABASE CLIENT ──────────────────────────────────────────────────────────
-const SCHEMA_SQL = `-- Run in Supabase Dashboard → SQL Editor
-create extension if not exists "uuid-ossp";
-
-create table if not exists entries (
-  id uuid primary key default uuid_generate_v4(),
-  user_id uuid references auth.users(id) on delete cascade not null,
-  type text not null, name text not null, species text,
-  lat double precision not null, lng double precision not null,
-  date text not null, notes text, photo text,
-  created_at timestamptz default now()
-);
-create table if not exists trails (
-  id uuid primary key default uuid_generate_v4(),
-  user_id uuid references auth.users(id) on delete cascade not null,
-  name text not null, dist real default 0, diff text default 'Easy',
-  description text, eids text[] default '{}', pub boolean default false,
-  created_at timestamptz default now()
-);
-create table if not exists caches (
-  id uuid primary key default uuid_generate_v4(),
-  user_id uuid references auth.users(id) on delete cascade not null,
-  name text not null, lat double precision not null,
-  lng double precision not null, clue text,
-  found boolean default false, created_at timestamptz default now()
-);
-create table if not exists journal (
-  id uuid primary key default uuid_generate_v4(),
-  user_id uuid references auth.users(id) on delete cascade not null,
-  date text not null, title text not null, body text not null,
-  created_at timestamptz default now()
-);
-alter table entries enable row level security;
-alter table trails enable row level security;
-alter table caches enable row level security;
-alter table journal enable row level security;
-drop policy if exists "own" on entries;
-drop policy if exists "own" on trails;
-drop policy if exists "own" on caches;
-drop policy if exists "own" on journal;
-create policy "own" on entries for all using (auth.uid() = user_id);
-create policy "own" on trails for all using (auth.uid() = user_id);
-create policy "own" on caches for all using (auth.uid() = user_id);
-create policy "own" on journal for all using (auth.uid() = user_id);`;
-
 function makeSB(url,key){
   const h=tok=>({'apikey':key,'Authorization':'Bearer '+(tok||key),'Content-Type':'application/json'});
   const req=async(path,opts,tok)=>{
@@ -207,88 +145,44 @@ function makeSB(url,key){
   };
 }
 
-// ── CONFIG SCREEN ────────────────────────────────────────────────────────────
-function ConfigScreen({onConnect,onSkip}){
-  const [url,setUrl]=useState(SUPABASE_CONFIG.url);
-  const [key,setKey]=useState(SUPABASE_CONFIG.anonKey);
-  const [loading,setLoading]=useState(false);
-  const [error,setError]=useState('');
-  const [showSQL,setShowSQL]=useState(false);
-  const [copied,setCopied]=useState(false);
-
-  const connect=async()=>{
-    if(!url.trim()||!key.trim()){setError('Both fields are required');return;}
-    setLoading(true);setError('');
-    try{
-      const clean=url.trim().replace(/\/$/,'');
-      const r=await fetch(clean+'/auth/v1/settings',{headers:{apikey:key.trim()}});
-      if(!r.ok)throw new Error();
-      onConnect(clean,key.trim());
-    }catch{setError('Could not connect. Check your Project URL and anon key.');}
-    setLoading(false);
-  };
-  const copy=()=>{
-    navigator.clipboard?.writeText(SCHEMA_SQL).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});
-  };
-
+// ── LANDING / AUTH SCREENS ──────────────────────────────────────────────────
+function LandingScreen({onAuthMode,canAuth}){
+  const features=[
+    {ic:'🛰️',title:'Track Activities',body:'Record time, distance, pace, and your route on a live map.'},
+    {ic:'🔬',title:'Catalog Discoveries',body:'Save plants, wildlife, landmarks, notes, photos, and GPS points.'},
+    {ic:'🗺️',title:'Build Trails',body:'Turn field discoveries into shareable routes and waypoints.'},
+    {ic:'📔',title:'Keep a Journal',body:'Save completed activities and field notes to your personal log.'},
+  ];
   return(
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:C.bg,fontFamily:'-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif',boxShadow:'0 0 40px rgba(0,0,0,0.12)'}}>
-      <div style={{background:'linear-gradient(155deg,'+C.dg+','+C.mg+')',padding:'60px 24px 32px',textAlign:'center'}}>
-        <div style={{fontSize:48,marginBottom:10}}>🌿</div>
-        <div style={{fontSize:11,fontWeight:700,color:C.pg,letterSpacing:'2px',marginBottom:6}}>TRAILKEEPER</div>
-        <div style={{fontSize:22,fontWeight:800,color:C.wh}}>Connect to Supabase</div>
-        <div style={{fontSize:13,color:'#a7f3d0',marginTop:6}}>Project configured and ready to verify</div>
-      </div>
-      <div style={{padding:'20px 16px'}}>
-        {[
-          {n:1,title:'Supabase project configured',body:<span>Connected to <b style={{color:C.sb}}>uadwtvfiptyhuctkuity</b>. Use this screen if you need to verify or change projects.</span>},
-          {n:2,title:'Run the SQL schema',body:null},
-        ].map(s=>(
-          <div key={s.n} style={{background:C.wh,borderRadius:20,padding:16,marginBottom:12,boxShadow:'0 1px 8px rgba(0,0,0,0.06)'}}>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:s.body?8:0}}>
-              <div style={{display:'flex',alignItems:'center',gap:10}}>
-                <div style={{width:28,height:28,borderRadius:10,background:C.mg,display:'flex',alignItems:'center',justifyContent:'center',color:C.wh,fontWeight:800,fontSize:13}}>{s.n}</div>
-                <div style={{fontWeight:700,color:C.dg,fontSize:14}}>{s.title}</div>
-              </div>
-              {s.n===2&&<button onClick={()=>setShowSQL(x=>!x)} style={{fontSize:11,fontWeight:700,color:C.mg,background:C.pg,border:'none',borderRadius:8,padding:'4px 10px',cursor:'pointer'}}>{showSQL?'Hide':'Show SQL'}</button>}
-            </div>
-            {s.body&&<div style={{fontSize:12,color:C.gr,lineHeight:1.6}}>{s.body}</div>}
-            {s.n===2&&<div style={{fontSize:12,color:C.gr}}>Dashboard → SQL Editor → New query → paste and run</div>}
-            {s.n===2&&showSQL&&(
-              <div style={{marginTop:12}}>
-                <pre style={{background:'#1E293B',color:'#E2E8F0',borderRadius:12,padding:12,fontSize:10,overflow:'auto',maxHeight:180,margin:0,lineHeight:1.5,whiteSpace:'pre-wrap'}}>{SCHEMA_SQL}</pre>
-                <button onClick={copy} style={{marginTop:8,width:'100%',padding:'9px',borderRadius:10,border:'none',background:copied?C.lg:C.pg,color:copied?C.wh:C.dg,fontWeight:700,fontSize:12,cursor:'pointer'}}>
-                  {copied?'✓ Copied!':'📋 Copy SQL'}
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
-        <div style={{background:C.wh,borderRadius:20,padding:16,marginBottom:14,boxShadow:'0 1px 8px rgba(0,0,0,0.06)'}}>
-          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
-            <div style={{width:28,height:28,borderRadius:10,background:C.mg,display:'flex',alignItems:'center',justifyContent:'center',color:C.wh,fontWeight:800,fontSize:13}}>3</div>
-            <div style={{fontWeight:700,color:C.dg,fontSize:14}}>Enter credentials</div>
-          </div>
-          <div style={{fontSize:11,color:C.gr,fontWeight:600,marginBottom:5}}>PROJECT URL (Settings → API)</div>
-          <input value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://yourproject.supabase.co" style={{width:'100%',padding:'11px 13px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:12,marginBottom:12,boxSizing:'border-box',outline:'none',fontFamily:'monospace'}}/>
-          <div style={{fontSize:11,color:C.gr,fontWeight:600,marginBottom:5}}>ANON KEY (Settings → API)</div>
-          <input value={key} onChange={e=>setKey(e.target.value)} placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..." style={{width:'100%',padding:'11px 13px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:12,marginBottom:14,boxSizing:'border-box',outline:'none',fontFamily:'monospace'}}/>
-          {error&&<div style={{background:'#FEE2E2',color:'#991B1B',borderRadius:10,padding:'8px 12px',fontSize:12,marginBottom:12}}>{error}</div>}
-          <button onClick={connect} disabled={loading} style={{width:'100%',padding:'14px',borderRadius:16,border:'none',background:C.mg,color:C.wh,fontWeight:700,fontSize:15,cursor:'pointer',opacity:loading?0.75:1}}>
-            {loading?'⟳ Connecting…':'🔗 Verify Supabase Connection'}
-          </button>
+      <div style={{background:'linear-gradient(155deg,'+C.dg+' 0%,'+C.mg+' 58%,'+C.lg+' 100%)',padding:'58px 22px 26px',borderRadius:'0 0 32px 32px'}}>
+        <div style={{fontSize:50,marginBottom:10}}>🌿</div>
+        <div style={{fontSize:11,fontWeight:800,color:C.pg,letterSpacing:'2px',marginBottom:7}}>TRAILKEEPER</div>
+        <div style={{fontSize:31,fontWeight:900,color:C.wh,lineHeight:1.05,letterSpacing:0}}>Explore, record, and share the trail.</div>
+        <div style={{fontSize:14,color:'#d1fae5',lineHeight:1.55,marginTop:10}}>A field companion for activity tracking, species discovery, trail building, geocaching, and outdoor journals.</div>
+        <div style={{display:'flex',gap:10,marginTop:20}}>
+          <button onClick={()=>onAuthMode('signup')} disabled={!canAuth} style={{flex:1,padding:'14px 12px',borderRadius:16,border:'none',background:canAuth?C.wh:'rgba(255,255,255,0.35)',color:C.dg,fontWeight:900,fontSize:15,cursor:canAuth?'pointer':'not-allowed'}}>Sign Up</button>
+          <button onClick={()=>onAuthMode('login')} disabled={!canAuth} style={{flex:1,padding:'14px 12px',borderRadius:16,border:'1.5px solid rgba(255,255,255,0.55)',background:'rgba(255,255,255,0.12)',color:C.wh,fontWeight:900,fontSize:15,cursor:canAuth?'pointer':'not-allowed'}}>Log In</button>
         </div>
-        <button onClick={onSkip} style={{width:'100%',padding:'13px',borderRadius:16,border:'1.5px solid '+C.pg,background:C.wh,color:C.gr,fontWeight:600,fontSize:13,cursor:'pointer'}}>
-          Skip → Try Demo Mode
-        </button>
+        {!canAuth&&<div style={{marginTop:12,borderRadius:12,padding:'9px 12px',background:'rgba(255,255,255,0.12)',color:'#fef3c7',fontSize:12,fontWeight:700}}>Accounts require `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` environment variables.</div>}
+      </div>
+      <div style={{padding:'18px 16px 28px'}}>
+        {features.map(f=>(
+          <Card key={f.title} style={{display:'flex',gap:13,alignItems:'flex-start',marginBottom:12,border:'1px solid '+C.pg}}>
+            <div style={{width:44,height:44,borderRadius:14,background:C.pg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:23,flexShrink:0}}>{f.ic}</div>
+            <div>
+              <div style={{fontWeight:800,fontSize:15,color:C.dg,marginBottom:3}}>{f.title}</div>
+              <div style={{fontSize:12,color:'#374151',lineHeight:1.5}}>{f.body}</div>
+            </div>
+          </Card>
+        ))}
       </div>
     </div>
   );
 }
 
-// ── AUTH SCREEN ──────────────────────────────────────────────────────────────
-function AuthScreen({sb,onAuth,onBack}){
-  const [view,setView]=useState('login');
+function AuthScreen({sb,onAuth,onBack,initialView='login'}){
+  const [view,setView]=useState(initialView);
   const [email,setEmail]=useState('');
   const [pw,setPw]=useState('');
   const [loading,setLoading]=useState(false);
@@ -337,7 +231,7 @@ function AuthScreen({sb,onAuth,onBack}){
           {loading?'⟳ Please wait…':view==='login'?'→ Sign In':'→ Create Account'}
         </button>
         <button onClick={onBack} style={{width:'100%',padding:'12px',borderRadius:16,border:'1.5px solid '+C.pg,background:C.wh,color:C.gr,fontWeight:600,fontSize:13,cursor:'pointer'}}>
-          ← Change Supabase project
+          ← Back to TrailKeeper
         </button>
       </div>
     </div>
@@ -384,14 +278,14 @@ function CatalogMapView({entries,trails,userLoc,onSelect}){
   );
 }
 
-function ActivityOverlay({path,tTime,tDist,onStop,gpsMode}){
+function ActivityOverlay({path,tTime,tDist,onStop,onTogglePause,paused,gpsMode,locked,onToggleLock}){
   const cur=path.length>0?path[path.length-1]:null;
   return(
     <div style={{position:'fixed',inset:0,zIndex:250,display:'flex',flexDirection:'column',maxWidth:430,margin:'0 auto',background:C.dg}}>
       <div style={{background:'linear-gradient(155deg,'+C.dg+',#2D6A4F)',padding:'52px 20px 20px',flexShrink:0}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
           <div>
-            <div style={{fontSize:10,fontWeight:700,color:C.pg,letterSpacing:'1.5px',marginBottom:4}}>{gpsMode==='real'?'🛰️ GPS ACTIVE':'📡 GPS SIMULATED'}</div>
+            <div style={{fontSize:10,fontWeight:700,color:C.pg,letterSpacing:'1.5px',marginBottom:4}}>{paused?'⏸ PAUSED':gpsMode==='real'?'🛰️ GPS ACTIVE':'📡 GPS SIMULATED'}</div>
             <div style={{fontSize:44,fontWeight:900,color:C.wh,lineHeight:1,letterSpacing:'-1px'}}>{fmtTime(tTime)}</div>
             <div style={{fontSize:12,color:'#a7f3d0',marginTop:2}}>elapsed time</div>
           </div>
@@ -416,21 +310,27 @@ function ActivityOverlay({path,tTime,tDist,onStop,gpsMode}){
         {path.length<=1&&<div style={{position:'absolute',left:0,right:0,top:'50%',textAlign:'center',fontSize:13,color:C.gr,fontWeight:700}}>Waiting for movement...</div>}
       </div>
       <div style={{padding:'16px 16px 28px',background:C.dg,flexShrink:0}}>
-        <button onClick={onStop} style={{width:'100%',padding:'18px',borderRadius:20,border:'none',background:'#ef4444',color:C.wh,fontWeight:900,fontSize:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:10,boxShadow:'0 4px 20px rgba(239,68,68,0.4)'}}>
-          <span style={{fontSize:22}}>⏹</span> Stop Activity
-        </button>
+        {locked?(
+          <button onClick={onToggleLock} style={{width:'100%',padding:'18px',borderRadius:20,border:'1.5px solid rgba(255,255,255,0.3)',background:'rgba(255,255,255,0.12)',color:C.wh,fontWeight:900,fontSize:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:10}}>
+            <span style={{fontSize:22}}>🔒</span> Locked
+          </button>
+        ):(
+          <div style={{display:'flex',gap:10}}>
+            <button onClick={onTogglePause} style={{flex:1,padding:'16px 10px',borderRadius:18,border:'none',background:paused?C.lg:C.am,color:C.wh,fontWeight:900,fontSize:15,cursor:'pointer'}}>
+              {paused?'▶ Resume':'⏸ Pause'}
+            </button>
+            <button onClick={onStop} style={{flex:1,padding:'16px 10px',borderRadius:18,border:'none',background:'#ef4444',color:C.wh,fontWeight:900,fontSize:15,cursor:'pointer',boxShadow:'0 4px 20px rgba(239,68,68,0.35)'}}>
+              ⏹ End
+            </button>
+          </div>
+        )}
+        {!locked&&<button onClick={onToggleLock} style={{width:'100%',marginTop:10,padding:'12px',borderRadius:16,border:'1.5px solid rgba(255,255,255,0.25)',background:'rgba(255,255,255,0.08)',color:C.pg,fontWeight:800,fontSize:13,cursor:'pointer'}}>🔓 Tap to lock controls</button>}
       </div>
     </div>
   );
 }
 
-function ActivitySummary({path,tTime,tDist,onDismiss,onSaveJournal}){
-  const W=340,H=200;
-  const b=getActivityBounds(path);
-  const proj=(lat,lng)=>project(lat,lng,b,W,H);
-  const pts=path.map(p=>{const{x,y}=proj(p.lat,p.lng);return x+','+y;}).join(' ');
-  const startXY=path.length>0?proj(path[0].lat,path[0].lng):null;
-  const endXY=path.length>0?proj(path[path.length-1].lat,path[path.length-1].lng):null;
+function ActivitySummary({path,tTime,tDist,onDismiss,onSaveJournal,onShare}){
   return(
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 20px'}}>
       <div style={{background:C.wh,borderRadius:28,width:'100%',maxWidth:400,overflow:'hidden',boxShadow:'0 24px 60px rgba(0,0,0,0.3)'}}>
@@ -448,20 +348,16 @@ function ActivitySummary({path,tTime,tDist,onDismiss,onSaveJournal}){
         </div>
         {path.length>1&&(
           <div style={{padding:'14px 14px 0'}}>
-            <div style={{fontSize:11,fontWeight:700,color:C.gr,textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:8}}>Route</div>
+            <div style={{fontSize:11,fontWeight:700,color:C.gr,textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:8}}>Route Map</div>
             <div style={{borderRadius:14,overflow:'hidden',border:'1px solid '+C.pg}}>
-              <svg width="100%" viewBox={'0 0 '+W+' '+H} style={{display:'block',background:'#EFF6EE'}}>
-                {[0.25,0.5,0.75].map(f=><g key={f}><line x1={W*f} y1="0" x2={W*f} y2={H} stroke="#DCE9D8" strokeWidth="1"/><line x1="0" y1={H*f} x2={W} y2={H*f} stroke="#DCE9D8" strokeWidth="1"/></g>)}
-                <polyline points={pts} fill="none" stroke={C.mg} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" opacity="0.9"/>
-                {startXY&&<circle cx={startXY.x} cy={startXY.y} r="7" fill={C.lg} stroke="white" strokeWidth="2"/>}
-                {endXY&&<circle cx={endXY.x} cy={endXY.y} r="7" fill="#ef4444" stroke="white" strokeWidth="2"/>}
-              </svg>
+              <RealMap points={path} userLoc={path[path.length-1]} height={220} zoom={16}/>
             </div>
           </div>
         )}
         <div style={{display:'flex',gap:10,padding:'14px'}}>
-          <button onClick={onSaveJournal} style={{flex:1,padding:'13px',borderRadius:14,border:'none',background:C.mg,color:C.wh,fontWeight:700,fontSize:13,cursor:'pointer'}}>📔 Save to Journal</button>
-          <button onClick={onDismiss} style={{flex:1,padding:'13px',borderRadius:14,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:13,cursor:'pointer'}}>Done</button>
+          <button onClick={onSaveJournal} style={{flex:1,padding:'13px 8px',borderRadius:14,border:'none',background:C.mg,color:C.wh,fontWeight:700,fontSize:12,cursor:'pointer'}}>📔 Save</button>
+          <button onClick={onShare} style={{flex:1,padding:'13px 8px',borderRadius:14,border:'none',background:C.sky,color:C.wh,fontWeight:700,fontSize:12,cursor:'pointer'}}>📤 Share</button>
+          <button onClick={onDismiss} style={{flex:1,padding:'13px 8px',borderRadius:14,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:12,cursor:'pointer'}}>Done</button>
         </div>
       </div>
     </div>
@@ -661,6 +557,7 @@ function TrailsScreen({trails,setTrails,entries,openEntry,onShare}){
         {sub==='discover'&&(
           <div>
             <div style={{background:C.pg,borderRadius:14,padding:'10px 14px',marginBottom:14,fontSize:12,color:C.dg,fontWeight:600}}>🌍 Public trails from the TrailKeeper community</div>
+            {community.length===0&&<div style={{textAlign:'center',padding:'42px 10px',color:C.gr}}><div style={{fontSize:46}}>🗺️</div><div style={{fontWeight:800,color:C.dg,marginTop:8}}>No public trails yet</div><div style={{fontSize:12,marginTop:5}}>Shared routes will appear here when explorers publish them.</div></div>}
             {community.map(t=>(
               <Card key={t.id} style={{marginBottom:12}}>
                 <div style={{display:'flex',alignItems:'flex-start',gap:12,marginBottom:10}}>
@@ -740,7 +637,7 @@ function CacheScreen({caches,setCaches,sb,session}){
   );
 }
 
-function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,profileName,setProfileName,onOpenSetup}){
+function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,profileName,setProfileName}){
   const [ptab,setPtab]=useState('stats');
   const [form,setForm]=useState({title:'',body:''});
   const [showForm,setShowForm]=useState(false);
@@ -783,13 +680,13 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
   const total=entries.length||1;
   const goals=[
     {label:'Discoveries this week',cur:Math.min(entries.length,3),target:5,icon:'🔍',color:C.mg},
-    {label:'Miles walked',cur:1.8,target:5.0,icon:'👟',color:C.sky},
+    {label:'Miles walked',cur:0,target:5.0,icon:'👟',color:C.sky},
     {label:"New species ID'd",cur:entries.filter(e=>e.species).length,target:10,icon:'🌱',color:C.am},
-    {label:'Caches found',cur:1,target:5,icon:'📦',color:C.br},
+    {label:'Caches found',cur:0,target:5,icon:'📦',color:C.br},
   ];
   const badges=[
     {ic:'🌳',lbl:'Tree Hugger',desc:stats.trees+' trees',ok:stats.trees>0},
-    {ic:'🐦',lbl:'Bird Watcher',desc:'First bird',ok:true},
+    {ic:'🐦',lbl:'Bird Watcher',desc:'First bird',ok:stats.birds>0},
     {ic:'🗺️',lbl:'Trailblazer',desc:'Trail created',ok:stats.trails>0},
     {ic:'📦',lbl:'Cache Hunter',desc:'Find 3 caches',ok:false},
     {ic:'🍄',lbl:'Forager',desc:'Log 5 fungi',ok:false},
@@ -994,11 +891,8 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
         {ptab==='settings'&&(
           <div>
             <Card style={{marginBottom:12}}>
-              <div style={{fontWeight:800,fontSize:16,color:C.dg,marginBottom:10}}>Local Settings</div>
+              <div style={{fontWeight:800,fontSize:16,color:C.dg,marginBottom:10}}>Account Settings</div>
               {[
-                ['Supabase URL',SUPABASE_CONFIG.url||'Missing'],
-                ['Supabase anon key',SUPABASE_CONFIG.anonKey?'Configured':'Missing'],
-                ['AI identify function',AI_IDENTIFY_URL||'Missing'],
                 ['Google Health Client ID',GOOGLE_HEALTH_CONFIG.clientId||'Missing'],
                 ['Signed in user',session?session.user.email:'None'],
               ].map(([label,value])=>(
@@ -1010,9 +904,8 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
             </Card>
             <Card>
               <div style={{fontWeight:700,color:C.dg,marginBottom:10}}>Controls</div>
-              <button onClick={onOpenSetup} style={{width:'100%',padding:'12px',borderRadius:14,border:'none',background:C.mg,color:C.wh,fontWeight:700,fontSize:14,cursor:'pointer',marginBottom:10}}>Open Supabase Setup</button>
               <button onClick={()=>{setProfileName('');setNameDraft('');}} style={{width:'100%',padding:'12px',borderRadius:14,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:14,cursor:'pointer'}}>Reset Profile Name</button>
-              <div style={{fontSize:11,color:C.gr,lineHeight:1.5,marginTop:10}}>These controls are local app preferences. Security-sensitive authorization must be enforced by Supabase policies or backend functions.</div>
+              <div style={{fontSize:11,color:C.gr,lineHeight:1.5,marginTop:10}}>Database connection settings are loaded from environment variables and are not editable in the app.</div>
             </Card>
           </div>
         )}
@@ -1119,7 +1012,8 @@ function QRModal({trail,onClose}){
 
 // ── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function TrailKeeper(){
-  const [appMode,setAppMode]=useState(SUPABASE_CONFIG.url&&SUPABASE_CONFIG.anonKey?'auth':'setup'); // 'setup'|'auth'|'app'
+  const [appMode,setAppMode]=useState('landing'); // 'landing'|'auth'|'app'
+  const [authView,setAuthView]=useState('login');
   const [sb,setSb]=useState(()=>SUPABASE_CONFIG.url&&SUPABASE_CONFIG.anonKey?makeSB(SUPABASE_CONFIG.url,SUPABASE_CONFIG.anonKey):null);
   const [session,setSession]=useState(null);
   const [dbLoading,setDbLoading]=useState(false);
@@ -1142,6 +1036,8 @@ export default function TrailKeeper(){
   const [userLoc,setUserLoc]=useState(null);
   const [locStatus,setLocStatus]=useState('idle');
   const [tracking,setTracking]=useState(false);
+  const [paused,setPaused]=useState(false);
+  const [activityLocked,setActivityLocked]=useState(true);
   const [showActivity,setShowActivity]=useState(false);
   const [showSummary,setShowSummary]=useState(false);
   const [tTime,setTTime]=useState(0);
@@ -1155,8 +1051,10 @@ export default function TrailKeeper(){
   const prevPosRef=useRef(null);
   const simDirRef=useRef(0);
   const userLocRef=useRef(null);
+  const pausedRef=useRef(false);
 
   useEffect(()=>{userLocRef.current=userLoc;},[userLoc]);
+  useEffect(()=>{pausedRef.current=paused;},[paused]);
   useEffect(()=>{localStorage.setItem('trailkeeper_profile_name',profileName);},[profileName]);
 
   useEffect(()=>{
@@ -1175,11 +1073,12 @@ export default function TrailKeeper(){
     prevPosRef.current={lat:base.lat,lng:base.lng};
     simDirRef.current=Math.random()*Math.PI*2;
     setTrackPath([{lat:base.lat,lng:base.lng}]);
-    timerRef.current=setInterval(()=>setTTime(t=>t+1),1000);
+    timerRef.current=setInterval(()=>{if(!pausedRef.current)setTTime(t=>t+1);},1000);
     let gpsActive=false;
     if(navigator.geolocation){
       watchRef.current=navigator.geolocation.watchPosition(
         pos=>{
+          if(pausedRef.current)return;
           if(!gpsActive){gpsActive=true;setGpsMode('real');clearInterval(simRef.current);}
           const{latitude,longitude}=pos.coords;
           const prev=prevPosRef.current;
@@ -1191,7 +1090,7 @@ export default function TrailKeeper(){
       );
     }
     simRef.current=setInterval(()=>{
-      if(gpsActive)return;
+      if(gpsActive||pausedRef.current)return;
       simDirRef.current+=(Math.random()-0.47)*0.28;
       const prev=prevPosRef.current;
       const spd=0.000044;
@@ -1205,8 +1104,7 @@ export default function TrailKeeper(){
   },[tracking]);
 
   // ── Supabase handlers ──
-  const handleConnect=(url,key)=>{setSb(makeSB(url,key));setAppMode('auth');};
-  const handleSkip=()=>setAppMode('app');
+  const openAuth=mode=>{setAuthView(mode);if(sb)setAppMode('auth');};
 
   const handleAuth=async data=>{
     setSession(data);
@@ -1231,7 +1129,7 @@ export default function TrailKeeper(){
   const handleSignOut=async()=>{
     if(sb&&session)await sb.signOut(session.access_token).catch(()=>{});
     setSession(null);setEntries(E0);setTrails(TR0);setCaches(CA0);setJournal(JN0);
-    setAppMode('auth');
+    setAppMode('landing');
   };
 
   const sync=(table,data)=>{
@@ -1269,20 +1167,25 @@ export default function TrailKeeper(){
     setShowAdd(false);setPhoto(null);setAiSuggestions(null);setEntryLoc(null);setNewEntry({type:'tree',name:'',notes:'',description:''});
   };
 
-  const handleStartActivity=()=>{setTTime(0);setTDist(0);setTrackPath([]);setGpsMode('sim');setTracking(true);setShowActivity(true);};
-  const handleStopActivity=()=>{setTracking(false);setShowActivity(false);setShowSummary(true);};
+  const handleStartActivity=()=>{setTTime(0);setTDist(0);setTrackPath([]);setGpsMode('sim');setPaused(false);setActivityLocked(true);setTracking(true);setShowActivity(true);};
+  const handleStopActivity=()=>{setTracking(false);setPaused(false);setActivityLocked(true);setShowActivity(false);setShowSummary(true);};
   const handleSaveJournal=()=>{
     const j={id:genId(),date:new Date().toISOString().split('T')[0],title:'Activity — '+fmtDist(tDist),body:'Completed '+fmtDist(tDist)+' in '+fmtTime(tTime)+'. Pace: '+calcPace(tTime,tDist)+'. '+trackPath.length+' GPS points recorded.'};
     setJournal(js=>[j,...js]);
     sync('journal',j);
     setShowSummary(false);
   };
+  const handleShareActivity=async()=>{
+    const text='TrailKeeper activity: '+fmtDist(tDist)+' in '+fmtTime(tTime)+' at '+calcPace(tTime,tDist)+' pace.';
+    if(navigator.share){await navigator.share({title:'TrailKeeper Activity',text}).catch(()=>{});}
+    else await navigator.clipboard?.writeText(text).catch(()=>{});
+  };
 
   const stats={trees:entries.filter(e=>e.type==='tree').length,birds:entries.filter(e=>e.type==='bird').length,trails:trails.length,total:entries.length};
 
   // ── Routing ──
-  if(appMode==='setup')return <ConfigScreen onConnect={handleConnect} onSkip={handleSkip}/>;
-  if(appMode==='auth'&&sb)return <AuthScreen sb={sb} onAuth={handleAuth} onBack={()=>setAppMode('setup')}/>;
+  if(appMode==='landing')return <LandingScreen onAuthMode={openAuth} canAuth={!!sb}/>;
+  if(appMode==='auth'&&sb)return <AuthScreen sb={sb} onAuth={handleAuth} onBack={()=>setAppMode('landing')} initialView={authView}/>;
   if(dbLoading)return(
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:'linear-gradient(155deg,'+C.dg+','+C.mg+')',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',fontFamily:'-apple-system,BlinkMacSystemFont,sans-serif'}}>
       <div style={{fontSize:48,marginBottom:16}}>🌿</div>
@@ -1298,11 +1201,11 @@ export default function TrailKeeper(){
         {tab==='catalog'&&<CatalogScreen entries={entries} trails={trails} filter={filter} setFilter={setFilter} openAdd={handleOpenAdd} openEntry={setSelectedEntry} userLoc={userLoc}/>}
         {tab==='trails'&&<TrailsScreen trails={trails} setTrails={setTrails} entries={entries} openEntry={setSelectedEntry} onShare={setShareTrail}/>}
         {tab==='cache'&&<CacheScreen caches={caches} setCaches={setCaches} sb={sb} session={session}/>}
-        {tab==='profile'&&<ProfileScreen entries={entries} stats={stats} journal={journal} setJournal={setJournal} sb={sb} session={session} onSignOut={handleSignOut} profileName={profileName} setProfileName={setProfileName} onOpenSetup={()=>setAppMode('setup')}/>}
+        {tab==='profile'&&<ProfileScreen entries={entries} stats={stats} journal={journal} setJournal={setJournal} sb={sb} session={session} onSignOut={handleSignOut} profileName={profileName} setProfileName={setProfileName}/>}
       </div>
       <BottomNav tab={tab} setTab={setTab}/>
-      {showActivity&&<ActivityOverlay path={trackPath} tTime={tTime} tDist={tDist} onStop={handleStopActivity} gpsMode={gpsMode}/>}
-      {showSummary&&<ActivitySummary path={trackPath} tTime={tTime} tDist={tDist} onDismiss={()=>setShowSummary(false)} onSaveJournal={handleSaveJournal}/>}
+      {showActivity&&<ActivityOverlay path={trackPath} tTime={tTime} tDist={tDist} onStop={handleStopActivity} onTogglePause={()=>setPaused(p=>!p)} paused={paused} gpsMode={gpsMode} locked={activityLocked} onToggleLock={()=>setActivityLocked(l=>!l)}/>}
+      {showSummary&&<ActivitySummary path={trackPath} tTime={tTime} tDist={tDist} onDismiss={()=>setShowSummary(false)} onSaveJournal={handleSaveJournal} onShare={handleShareActivity}/>}
       {showAdd&&<AddEntryModal entry={newEntry} setEntry={setNewEntry} photo={photo} onPhoto={handlePhoto} loading={aiLoading} suggestions={aiSuggestions} onAI={handleAI} onSave={handleSave} onClose={()=>{setShowAdd(false);setPhoto(null);setAiSuggestions(null);setEntryLoc(null);setNewEntry({type:'tree',name:'',notes:'',description:''}); }} entryLoc={entryLoc}/>}
       {selectedEntry&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:300,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
