@@ -89,10 +89,10 @@ The app includes SQL in the setup screen. In Supabase, open SQL Editor, paste th
 
 ## AI Identify Function
 
-The browser app does not call Anthropic directly. Deploy the included Supabase Edge Function and store the Anthropic API key as a Supabase secret:
+The browser app does not call OpenAI directly. Deploy the included Supabase Edge Function and store the OpenAI API key as a Supabase secret:
 
 ```bash
-supabase secrets set ANTHROPIC_API_KEY=your-anthropic-api-key
+supabase secrets set OPENAI_API_KEY=your-openai-api-key
 supabase functions deploy identify-species
 ```
 

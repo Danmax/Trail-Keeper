@@ -10,9 +10,9 @@ Deno.serve(async req => {
     return Response.json({ error: "Method not allowed" }, { status: 405, headers: corsHeaders });
   }
 
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+  const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) {
-    return Response.json({ error: "ANTHROPIC_API_KEY is not configured" }, { status: 500, headers: corsHeaders });
+    return Response.json({ error: "OPENAI_API_KEY is not configured" }, { status: 500, headers: corsHeaders });
   }
 
   const { description = "", type = "species" } = await req.json().catch(() => ({}));
@@ -23,26 +23,31 @@ Deno.serve(async req => {
   const prompt = `Expert field naturalist. Identify this ${type}: "${description}". Return ONLY raw JSON array:
 [{"name":"Common Name","species":"Scientific name","confidence":"High|Medium|Low","tip":"One field ID tip"}]`;
 
-  const anthropic = await fetch("https://api.anthropic.com/v1/messages", {
+  const openai = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
+      "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 800,
-      messages: [{ role: "user", content: prompt }],
+      model: "gpt-5-mini",
+      input: prompt,
+      max_output_tokens: 800,
     }),
   });
 
-  const data = await anthropic.json().catch(() => ({}));
-  if (!anthropic.ok) {
-    return Response.json({ error: data.error?.message || "Anthropic request failed" }, { status: anthropic.status, headers: corsHeaders });
+  const data = await openai.json().catch(() => ({}));
+  if (!openai.ok) {
+    return Response.json({ error: data.error?.message || "OpenAI request failed" }, { status: openai.status, headers: corsHeaders });
   }
 
-  const text = (data.content || []).map((item: { text?: string }) => item.text || "").join("").replace(/```json|```/g, "").trim();
+  const text = (
+    data.output_text ||
+    (data.output || [])
+      .flatMap((item: { content?: { text?: string }[] }) => item.content || [])
+      .map((item: { text?: string }) => item.text || "")
+      .join("")
+  ).replace(/```json|```/g, "").trim();
   try {
     return Response.json({ suggestions: JSON.parse(text) }, { headers: corsHeaders });
   } catch {
