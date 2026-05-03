@@ -22,6 +22,7 @@ const TYPES = [
   {id:'fungi',label:'Fungi',icon:'🍄',color:C.br},
   {id:'bird',label:'Birds',icon:'🐦',color:C.sky},
   {id:'animal',label:'Animals',icon:'🦊',color:C.am},
+  {id:'landscape',label:'Landscapes',icon:'🏞️',color:'#0F766E'},
   {id:'landmark',label:'Landmarks',icon:'🗿',color:'#9F1239'},
 ];
 const COMMUNITY = [];
@@ -48,7 +49,7 @@ function fmtDist(mi){if(mi<0.05)return Math.round(mi*5280)+' ft';if(mi<10)return
 function fmtTime(s){return Math.floor(s/60)+':'+(s%60).toString().padStart(2,'0');}
 function calcPace(t,d){return t>0&&d>0.01?(t/60/d).toFixed(1)+'/mi':'--';}
 function badgeProgress(metric,stats){
-  const map={total_entries:stats.total,trees:stats.trees,birds:stats.birds,trails:stats.trails,caches:stats.caches,plants:stats.plants,fungi:stats.fungi,landmarks:stats.landmarks};
+  const map={total_entries:stats.total,trees:stats.trees,birds:stats.birds,trails:stats.trails,caches:stats.caches,plants:stats.plants,fungi:stats.fungi,landscapes:stats.landscapes,landmarks:stats.landmarks};
   return map[metric]||0;
 }
 function reactionCounts(reactions){
@@ -360,7 +361,7 @@ function CatalogMapView({entries,trails,userLoc,onSelect}){
   );
 }
 
-function ActivityOverlay({path,tTime,tDist,onStop,onTogglePause,paused,gpsMode,locked,onToggleLock,activityType}){
+function ActivityOverlay({path,tTime,tDist,onStop,onTogglePause,paused,gpsMode,locked,onToggleLock,activityType,onAddDiscovery}){
   const cur=path.length>0?path[path.length-1]:null;
   const activity=activityType||ACTIVITY_TYPES[0];
   return(
@@ -390,6 +391,7 @@ function ActivityOverlay({path,tTime,tDist,onStop,onTogglePause,paused,gpsMode,l
       <div style={{flex:1,position:'relative',overflow:'hidden',background:'#EFF6EE'}}>
         <RealMap points={path} userLoc={cur} height={520} zoom={16}/>
         {cur&&<div style={{position:'absolute',top:12,left:12,background:'rgba(255,255,255,0.92)',borderRadius:10,padding:'5px 10px'}}><div style={{fontSize:10,color:C.dg,fontWeight:700,fontFamily:'monospace'}}>{cur.lat.toFixed(5)}, {cur.lng.toFixed(5)}</div></div>}
+        <button onClick={onAddDiscovery} style={{position:'absolute',top:12,right:12,border:'none',background:C.mg,color:C.wh,borderRadius:14,padding:'10px 12px',fontSize:12,fontWeight:900,cursor:'pointer',boxShadow:'0 3px 14px rgba(0,0,0,0.2)'}}>📍 Add Find</button>
         {path.length<=1&&<div style={{position:'absolute',left:0,right:0,top:'50%',textAlign:'center',fontSize:13,color:C.gr,fontWeight:700}}>Waiting for movement...</div>}
       </div>
       <div style={{padding:'16px 16px 28px',background:C.dg,flexShrink:0}}>
@@ -885,7 +887,7 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
     {label:'Discoveries this week',cur:Math.min(entries.length,3),target:5,icon:'🔍',color:C.mg},
     {label:'Miles walked',cur:0,target:5.0,icon:'👟',color:C.sky},
     {label:"New species ID'd",cur:entries.filter(e=>e.species).length,target:10,icon:'🌱',color:C.am},
-    {label:'Caches found',cur:0,target:5,icon:'📦',color:C.br},
+    {label:'Caches found',cur:stats.caches,target:5,icon:'📦',color:C.br},
   ];
   const visibleBadges=(badges||[]).filter(b=>b.active!==false);
 
@@ -1138,7 +1140,7 @@ function ProfileScreen({entries,stats,journal,setJournal,sb,session,onSignOut,pr
               <div style={{display:'flex',gap:8,marginBottom:12}}>
                 <select value={badgeForm.metric} onChange={e=>setBadgeForm({...badgeForm,metric:e.target.value})} style={{flex:1,padding:'11px 13px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:13,background:C.wh,color:C.dg,fontFamily:'inherit'}}>
                   {[
-                    ['total_entries','Total discoveries'],['trees','Trees'],['birds','Birds'],['plants','Plants'],['fungi','Fungi'],['landmarks','Landmarks'],['trails','Trails'],['caches','Caches'],
+                    ['total_entries','Total discoveries'],['trees','Trees'],['birds','Birds'],['plants','Plants'],['fungi','Fungi'],['landscapes','Landscapes'],['landmarks','Landmarks'],['trails','Trails'],['caches','Caches'],
                   ].map(([v,l])=><option key={v} value={v}>{l}</option>)}
                 </select>
                 <input type="number" min="1" value={badgeForm.target_count} onChange={e=>setBadgeForm({...badgeForm,target_count:e.target.value})} style={{width:82,padding:'11px 10px',borderRadius:12,border:'1.5px solid '+C.pg,fontSize:13,boxSizing:'border-box',outline:'none',fontFamily:'inherit'}}/>
@@ -1176,7 +1178,7 @@ function BottomNav({tab,setTab}){
 function AddEntryModal({entry,setEntry,photo,onPhoto,loading,suggestions,onAI,onSave,onClose,entryLoc}){
   const fileRef=useRef();
   return(
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:200,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:520,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
       <div style={{width:'100%',maxWidth:430,background:C.cr,borderRadius:'28px 28px 0 0',maxHeight:'92vh',overflowY:'auto',paddingBottom:24}}>
         <div style={{display:'flex',justifyContent:'center',padding:'12px 0'}}><div style={{width:36,height:4,borderRadius:2,background:'#D1D5DB'}}/></div>
         <div style={{padding:'0 16px'}}>
@@ -1196,7 +1198,7 @@ function AddEntryModal({entry,setEntry,photo,onPhoto,loading,suggestions,onAI,on
           <div onClick={()=>fileRef.current.click()} style={{width:'100%',height:150,borderRadius:20,cursor:'pointer',marginBottom:14,background:photo?'url('+photo+') center/cover':C.pg,border:'2px dashed '+C.lg,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:6,boxSizing:'border-box'}}>
             {!photo&&<><div style={{fontSize:36}}>📷</div><div style={{fontSize:13,color:C.mg,fontWeight:700}}>Tap to add photo</div></>}
           </div>
-          <input ref={fileRef} type="file" accept="image/*" onChange={onPhoto} style={{display:'none'}}/>
+          <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={onPhoto} style={{display:'none'}}/>
           <textarea value={entry.description||''} onChange={e=>setEntry({...entry,description:e.target.value})} placeholder="Describe what you see… AI will suggest species" style={{width:'100%',padding:'12px 14px',borderRadius:14,fontSize:13,border:'1.5px solid '+C.pg,resize:'none',height:72,fontFamily:'inherit',background:C.wh,color:C.dg,outline:'none',boxSizing:'border-box',marginBottom:12}}/>
           <button onClick={onAI} disabled={loading} style={{width:'100%',padding:'14px',borderRadius:16,border:'none',cursor:'pointer',background:'linear-gradient(135deg,'+C.mg+','+C.dg+')',color:C.wh,fontWeight:700,fontSize:15,marginBottom:14,display:'flex',alignItems:'center',justifyContent:'center',gap:8,opacity:loading?.75:1}}>
             <span style={{fontSize:20}}>🤖</span>{loading?'Identifying…':'AI Identify Species'}
@@ -1552,11 +1554,11 @@ export default function TrailKeeper(){
     setAiLoading(false);
   };
   const handleSave=()=>{
-    if(!newEntry.name)return;
     const id=genId();
     const lat=entryLoc?entryLoc.lat:(userLoc?userLoc.lat:25.76)+(Math.random()-.5)*0.002;
     const lng=entryLoc?entryLoc.lng:(userLoc?userLoc.lng:-80.19)+(Math.random()-.5)*0.002;
-    const entry={id,...newEntry,photo,lat,lng,date:new Date().toISOString().split('T')[0]};
+    const typeLabel=(TYPES.find(t=>t.id===newEntry.type)||TYPES[1]).label.replace(/s$/,'');
+    const entry={id,...newEntry,name:newEntry.name?.trim()||typeLabel+' find',photo,lat,lng,date:new Date().toISOString().split('T')[0]};
     setEntries(es=>[entry,...es]);
     sync('entries',entry);
     setShowAdd(false);setPhoto(null);setAiSuggestions(null);setEntryLoc(null);setNewEntry({type:'tree',name:'',notes:'',description:'',pub:false});
@@ -1564,13 +1566,16 @@ export default function TrailKeeper(){
 
   const handleStartActivity=()=>setShowActivityPicker(true);
   const beginActivity=type=>{setActivityType(type);setShowActivityPicker(false);setTTime(0);setTDist(0);setTrackPath([]);setGpsMode('sim');setPaused(false);setActivityLocked(true);setTracking(true);setShowActivity(true);};
-  const handleStopActivity=()=>{setTracking(false);setPaused(false);setActivityLocked(true);setShowActivity(false);setShowSummary(true);};
+  const saveActivityRecord=()=>{
+    const label=activityType?.label||'Activity';
+    sync('activities',{id:genId(),activity_type:activityType?.id||'activity',activity_label:label,date:new Date().toISOString().split('T')[0],duration_seconds:tTime,distance_miles:tDist,pace:calcPace(tTime,tDist),path:trackPath});
+  };
+  const handleStopActivity=()=>{saveActivityRecord();setTracking(false);setPaused(false);setActivityLocked(true);setShowActivity(false);setShowSummary(true);};
   const handleSaveJournal=()=>{
     const label=activityType?.label||'Activity';
     const j={id:genId(),date:new Date().toISOString().split('T')[0],title:label+' — '+fmtDist(tDist),body:'Completed '+label.toLowerCase()+' '+fmtDist(tDist)+' in '+fmtTime(tTime)+'. Pace: '+calcPace(tTime,tDist)+'. '+trackPath.length+' GPS points recorded.'};
     setJournal(js=>[j,...js]);
     sync('journal',j);
-    sync('activities',{id:genId(),activity_type:activityType?.id||'activity',activity_label:label,date:new Date().toISOString().split('T')[0],duration_seconds:tTime,distance_miles:tDist,pace:calcPace(tTime,tDist),path:trackPath});
     setShowSummary(false);
   };
   const handleCreateBadge=data=>{
@@ -1612,7 +1617,7 @@ export default function TrailKeeper(){
   };
   const closeEntryDetail=()=>{setSelectedEntry(null);setEntryComments([]);setEntryReactions([]);setCommentDraft('');};
 
-  const stats={trees:entries.filter(e=>e.type==='tree').length,birds:entries.filter(e=>e.type==='bird').length,plants:entries.filter(e=>e.type==='plant').length,fungi:entries.filter(e=>e.type==='fungi').length,landmarks:entries.filter(e=>e.type==='landmark').length,caches:caches.filter(c=>c.found).length,trails:trails.length,total:entries.length};
+  const stats={trees:entries.filter(e=>e.type==='tree').length,birds:entries.filter(e=>e.type==='bird').length,plants:entries.filter(e=>e.type==='plant').length,fungi:entries.filter(e=>e.type==='fungi').length,landscapes:entries.filter(e=>e.type==='landscape').length,landmarks:entries.filter(e=>e.type==='landmark').length,caches:caches.filter(c=>c.found).length,trails:trails.length,total:entries.length};
 
   // ── Routing ──
   if(appMode==='landing')return <LandingScreen onAuthMode={openAuth} canAuth={!!sb}/>;
@@ -1636,7 +1641,7 @@ export default function TrailKeeper(){
       </div>
       <BottomNav tab={tab} setTab={setTab}/>
       {showActivityPicker&&<ActivityTypeModal onSelect={beginActivity} onClose={()=>setShowActivityPicker(false)}/>}
-      {showActivity&&<ActivityOverlay path={trackPath} tTime={tTime} tDist={tDist} onStop={handleStopActivity} onTogglePause={()=>setPaused(p=>!p)} paused={paused} gpsMode={gpsMode} locked={activityLocked} onToggleLock={()=>setActivityLocked(l=>!l)} activityType={activityType}/>}
+      {showActivity&&<ActivityOverlay path={trackPath} tTime={tTime} tDist={tDist} onStop={handleStopActivity} onTogglePause={()=>setPaused(p=>!p)} paused={paused} gpsMode={gpsMode} locked={activityLocked} onToggleLock={()=>setActivityLocked(l=>!l)} activityType={activityType} onAddDiscovery={handleOpenAdd}/>}
       {showSummary&&<ActivitySummary path={trackPath} tTime={tTime} tDist={tDist} onDismiss={()=>setShowSummary(false)} onSaveJournal={handleSaveJournal} onShare={handleShareActivity} activityType={activityType}/>}
       {showAdd&&<AddEntryModal entry={newEntry} setEntry={setNewEntry} photo={photo} onPhoto={handlePhoto} loading={aiLoading} suggestions={aiSuggestions} onAI={handleAI} onSave={handleSave} onClose={()=>{setShowAdd(false);setPhoto(null);setAiSuggestions(null);setEntryLoc(null);setNewEntry({type:'tree',name:'',notes:'',description:'',pub:false}); }} entryLoc={entryLoc}/>}
       {selectedPlace&&<PlaceDetailModal place={selectedPlace} userLoc={userLoc} onClose={()=>setSelectedPlace(null)} onShare={handleSharePlace}/>}
