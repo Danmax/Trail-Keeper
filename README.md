@@ -85,7 +85,7 @@ TrailKeeper includes a web manifest and service worker. On supported browsers, o
 
 ## Supabase Schema
 
-The app includes SQL in the setup screen. In Supabase, open SQL Editor, paste the generated schema, and run it before relying on synced entries, trails, caches, or journal data.
+Database connection values are loaded from environment variables. Apply the SQL files in `supabase/migrations` before relying on synced entries, trails, caches, journal data, or public map discoveries.
 
 ## AI Identify Function
 

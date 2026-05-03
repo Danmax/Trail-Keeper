@@ -322,7 +322,7 @@ function EntryCard({entry,onClick}){
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontWeight:700,fontSize:15,color:C.dg,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{entry.name}</div>
         {entry.species&&<div style={{fontSize:11,color:C.gr,fontStyle:'italic'}}>{entry.species}</div>}
-        <div style={{fontSize:11,color:C.lb,marginTop:2}}>📍 {entry.lat.toFixed(4)}, {entry.lng.toFixed(4)} · {entry.date}</div>
+        <div style={{fontSize:11,color:C.lb,marginTop:2}}>📍 {entry.lat.toFixed(4)}, {entry.lng.toFixed(4)} · {entry.date}{entry.pub?' · 🌍 Public':''}</div>
       </div>
       <div style={{fontSize:18,color:t.color,opacity:0.5}}>›</div>
     </Card>
@@ -341,7 +341,7 @@ function CatalogMapView({entries,trails,userLoc,onSelect}){
       <svg width="100%" viewBox={'0 0 '+W+' '+H} style={{display:'block',background:'#EFF6EE'}}>
         {[0.25,0.5,0.75].map(f=><g key={f}><line x1={W*f} y1="0" x2={W*f} y2={H} stroke="#DCE9D8" strokeWidth="1"/><line x1="0" y1={H*f} x2={W} y2={H*f} stroke="#DCE9D8" strokeWidth="1"/></g>)}
         {trails.map(t=>{const pts=t.eids.map(id=>{const e=entries.find(x=>x.id===id);return e?proj(e.lat,e.lng):null;}).filter(Boolean);return pts.length>1&&<polyline key={t.id} points={pts.map(p=>p.x+','+p.y).join(' ')} fill="none" stroke={C.sky} strokeWidth="2.5" strokeDasharray="6,4" opacity="0.7"/>;})}
-        {entries.map(e=>{const{x,y}=proj(e.lat,e.lng);const t=TYPES.find(x=>x.id===e.type)||TYPES[1];return(<g key={e.id} onClick={()=>onSelect(e)} style={{cursor:'pointer'}}><circle cx={x} cy={y} r="15" fill={t.color} opacity="0.9"/><circle cx={x} cy={y} r="15" fill="white" opacity="0.15"/><text x={x} y={y+5} textAnchor="middle" fontSize="13" style={{userSelect:'none'}}>{t.icon}</text></g>);})}
+        {entries.map(e=>{const{x,y}=proj(e.lat,e.lng);const t=TYPES.find(x=>x.id===e.type)||TYPES[1];const pub=e.publicSource;return(<g key={(pub?'pub-':'own-')+e.id} onClick={()=>onSelect(e)} style={{cursor:'pointer'}}><circle cx={x} cy={y} r={pub?17:15} fill={pub?C.wh:t.color} opacity="0.95" stroke={pub?t.color:'none'} strokeWidth={pub?3:0}/><circle cx={x} cy={y} r={pub?11:15} fill={t.color} opacity={pub?0.82:0.9}/><circle cx={x} cy={y} r="15" fill="white" opacity="0.15"/><text x={x} y={y+5} textAnchor="middle" fontSize="13" style={{userSelect:'none'}}>{t.icon}</text></g>);})}
         {uXY&&<g><circle cx={uXY.x} cy={uXY.y} r="8" fill={C.sky} opacity="0.2"><animate attributeName="r" values="8;22;8" dur="2.5s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.35;0;0.35" dur="2.5s" repeatCount="indefinite"/></circle><circle cx={uXY.x} cy={uXY.y} r="7" fill={C.sky} opacity="0.95"/><circle cx={uXY.x} cy={uXY.y} r="3.5" fill="white"/></g>}
         <circle cx={W-20} cy={20} r="13" fill="white" opacity="0.88"/>
         <text x={W-20} y="25" fontSize="11" textAnchor="middle" fill={C.dg} fontWeight="700" style={{userSelect:'none'}}>N</text>
@@ -552,7 +552,7 @@ function HomeScreen({entries,stats,setTab,openAdd,openEntry,onStartActivity,user
   );
 }
 
-function CatalogScreen({entries,trails,filter,setFilter,openAdd,openEntry,userLoc}){
+function CatalogScreen({entries,trails,publicEntries,filter,setFilter,openAdd,openEntry,userLoc}){
   const [viewMode,setViewMode]=useState('list');
   const [search,setSearch]=useState('');
   const filtered=entries.filter(e=>{
@@ -560,6 +560,12 @@ function CatalogScreen({entries,trails,filter,setFilter,openAdd,openEntry,userLo
     const q=search.toLowerCase();
     return mT&&(!q||e.name.toLowerCase().includes(q)||(e.species&&e.species.toLowerCase().includes(q))||(e.notes&&e.notes.toLowerCase().includes(q)));
   });
+  const filteredPublic=publicEntries.filter(e=>{
+    const mT=filter==='all'||e.type===filter;
+    const q=search.toLowerCase();
+    return mT&&(!q||e.name.toLowerCase().includes(q)||(e.species&&e.species.toLowerCase().includes(q))||(e.notes&&e.notes.toLowerCase().includes(q)));
+  });
+  const mapEntries=[...filtered,...filteredPublic.map(e=>({...e,publicSource:true}))];
   return(
     <div>
       <div style={{background:'linear-gradient(155deg,'+C.dg+','+C.mg+')',padding:'52px 20px 20px',borderRadius:'0 0 32px 32px'}}>
@@ -582,8 +588,8 @@ function CatalogScreen({entries,trails,filter,setFilter,openAdd,openEntry,userLo
       <div style={{padding:'16px 16px 80px'}}>
         {viewMode==='map'?(
           <div>
-            <CatalogMapView entries={filtered} trails={trails} userLoc={userLoc} onSelect={openEntry}/>
-            <div style={{marginTop:10,padding:'10px 14px',background:C.pg,borderRadius:12,fontSize:12,color:C.dg,fontWeight:600,display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:16}}>🔵</span> Your location · Tap any pin to view details</div>
+            <CatalogMapView entries={mapEntries} trails={trails} userLoc={userLoc} onSelect={openEntry}/>
+            <div style={{marginTop:10,padding:'10px 14px',background:C.pg,borderRadius:12,fontSize:12,color:C.dg,fontWeight:600,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}><span style={{fontSize:16}}>🔵</span> Your location · Solid pins are yours · Ringed pins are public</div>
           </div>
         ):(
           <>
@@ -1106,6 +1112,15 @@ function AddEntryModal({entry,setEntry,photo,onPhoto,loading,suggestions,onAI,on
           )}
           <input value={entry.name||''} onChange={e=>setEntry({...entry,name:e.target.value})} placeholder="Common name…" style={{width:'100%',padding:'12px 14px',borderRadius:14,fontSize:13,border:'1.5px solid '+C.pg,marginBottom:10,boxSizing:'border-box',background:C.wh,outline:'none',fontFamily:'inherit'}}/>
           <input value={entry.notes||''} onChange={e=>setEntry({...entry,notes:e.target.value})} placeholder="Field notes (optional)…" style={{width:'100%',padding:'12px 14px',borderRadius:14,fontSize:13,border:'1.5px solid '+C.pg,marginBottom:16,boxSizing:'border-box',background:C.wh,outline:'none',fontFamily:'inherit'}}/>
+          <div style={{display:'flex',alignItems:'center',gap:10,background:entry.pub?C.pg:C.wh,border:'1.5px solid '+(entry.pub?C.mg:C.pg),borderRadius:14,padding:'11px 13px',marginBottom:14}}>
+            <div onClick={()=>setEntry({...entry,pub:!entry.pub})} style={{width:44,height:24,borderRadius:12,background:entry.pub?C.mg:'#D1D5DB',position:'relative',cursor:'pointer',flexShrink:0}}>
+              <div style={{position:'absolute',top:2,left:entry.pub?22:2,width:20,height:20,borderRadius:10,background:C.wh,transition:'left 0.15s'}}/>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:800,color:C.dg}}>Publish at this location</div>
+              <div style={{fontSize:11,color:C.gr,lineHeight:1.35}}>Other explorers can see this discovery on the public map.</div>
+            </div>
+          </div>
           <button onClick={onSave} style={{width:'100%',padding:'16px',borderRadius:18,border:'none',cursor:'pointer',background:C.mg,color:C.wh,fontWeight:800,fontSize:16}}>📍 Save Discovery</button>
         </div>
       </div>
@@ -1210,13 +1225,14 @@ export default function TrailKeeper(){
   const [tab,setTab]=useState('home');
   const [showAdd,setShowAdd]=useState(false);
   const [entries,setEntries]=useState(E0);
+  const [publicEntries,setPublicEntries]=useState([]);
   const [trails,setTrails]=useState(TR0);
   const [caches,setCaches]=useState(CA0);
   const [journal,setJournal]=useState(JN0);
   const [filter,setFilter]=useState('all');
   const [aiLoading,setAiLoading]=useState(false);
   const [aiSuggestions,setAiSuggestions]=useState(null);
-  const [newEntry,setNewEntry]=useState({type:'tree',name:'',notes:'',description:''});
+  const [newEntry,setNewEntry]=useState({type:'tree',name:'',notes:'',description:'',pub:false});
   const [photo,setPhoto]=useState(null);
   const [entryLoc,setEntryLoc]=useState(null);
   const [selectedEntry,setSelectedEntry]=useState(null);
@@ -1254,13 +1270,15 @@ export default function TrailKeeper(){
     setDbLoading(true);
     try{
       const t=data.access_token;
-      const [e,tr,ca,jn]=await Promise.all([
-        sb.get('entries',t,'order=created_at.desc'),
+      const [e,tr,ca,jn,pub]=await Promise.all([
+        sb.get('entries',t,'user_id=eq.'+data.user.id+'&order=created_at.desc'),
         sb.get('trails',t,'order=created_at.desc'),
         sb.get('caches',t,'order=created_at.desc'),
         sb.get('journal',t,'order=created_at.desc'),
+        sb.get('entries',t,'pub=eq.true&order=created_at.desc').catch(()=>[]),
       ]);
       setEntries(e||[]);
+      setPublicEntries((pub||[]).filter(x=>x.user_id!==data.user?.id));
       setTrails(tr||[]);
       setCaches(ca||[]);
       setJournal(jn||[]);
@@ -1355,7 +1373,7 @@ export default function TrailKeeper(){
   const handleSignOut=async()=>{
     if(sb&&session)await sb.signOut(session.access_token).catch(()=>{});
     localStorage.removeItem('trailkeeper_session');
-    setSession(null);setEntries(E0);setTrails(TR0);setCaches(CA0);setJournal(JN0);
+    setSession(null);setEntries(E0);setPublicEntries([]);setTrails(TR0);setCaches(CA0);setJournal(JN0);
     setAppMode('landing');
   };
 
@@ -1396,7 +1414,7 @@ export default function TrailKeeper(){
     const entry={id,...newEntry,photo,lat,lng,date:new Date().toISOString().split('T')[0]};
     setEntries(es=>[entry,...es]);
     sync('entries',entry);
-    setShowAdd(false);setPhoto(null);setAiSuggestions(null);setEntryLoc(null);setNewEntry({type:'tree',name:'',notes:'',description:''});
+    setShowAdd(false);setPhoto(null);setAiSuggestions(null);setEntryLoc(null);setNewEntry({type:'tree',name:'',notes:'',description:'',pub:false});
   };
 
   const handleStartActivity=()=>setShowActivityPicker(true);
@@ -1439,7 +1457,7 @@ export default function TrailKeeper(){
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',background:C.bg,fontFamily:'-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif',position:'relative',boxShadow:'0 0 40px rgba(0,0,0,0.12)'}}>
       <div style={{paddingBottom:80,minHeight:'100vh'}}>
         {tab==='home'&&<HomeScreen entries={entries} stats={stats} setTab={setTab} openAdd={handleOpenAdd} openEntry={setSelectedEntry} onStartActivity={handleStartActivity} userLoc={userLoc} locStatus={locStatus} profileName={profileName} profileAvatar={profileAvatar} nearbyPlaces={nearbyPlaces} nearbyStatus={nearbyStatus} onOpenPlace={setSelectedPlace}/>}
-        {tab==='catalog'&&<CatalogScreen entries={entries} trails={trails} filter={filter} setFilter={setFilter} openAdd={handleOpenAdd} openEntry={setSelectedEntry} userLoc={userLoc}/>}
+        {tab==='catalog'&&<CatalogScreen entries={entries} trails={trails} publicEntries={publicEntries} filter={filter} setFilter={setFilter} openAdd={handleOpenAdd} openEntry={setSelectedEntry} userLoc={userLoc}/>}
         {tab==='trails'&&<TrailsScreen trails={trails} setTrails={setTrails} entries={entries} openEntry={setSelectedEntry} onShare={setShareTrail}/>}
         {tab==='cache'&&<CacheScreen caches={caches} setCaches={setCaches} sb={sb} session={session}/>}
         {tab==='profile'&&<ProfileScreen entries={entries} stats={stats} journal={journal} setJournal={setJournal} sb={sb} session={session} onSignOut={handleSignOut} profileName={profileName} setProfileName={setProfileName} profileAvatar={profileAvatar} setProfileAvatar={setProfileAvatar}/>}
@@ -1448,7 +1466,7 @@ export default function TrailKeeper(){
       {showActivityPicker&&<ActivityTypeModal onSelect={beginActivity} onClose={()=>setShowActivityPicker(false)}/>}
       {showActivity&&<ActivityOverlay path={trackPath} tTime={tTime} tDist={tDist} onStop={handleStopActivity} onTogglePause={()=>setPaused(p=>!p)} paused={paused} gpsMode={gpsMode} locked={activityLocked} onToggleLock={()=>setActivityLocked(l=>!l)} activityType={activityType}/>}
       {showSummary&&<ActivitySummary path={trackPath} tTime={tTime} tDist={tDist} onDismiss={()=>setShowSummary(false)} onSaveJournal={handleSaveJournal} onShare={handleShareActivity} activityType={activityType}/>}
-      {showAdd&&<AddEntryModal entry={newEntry} setEntry={setNewEntry} photo={photo} onPhoto={handlePhoto} loading={aiLoading} suggestions={aiSuggestions} onAI={handleAI} onSave={handleSave} onClose={()=>{setShowAdd(false);setPhoto(null);setAiSuggestions(null);setEntryLoc(null);setNewEntry({type:'tree',name:'',notes:'',description:''}); }} entryLoc={entryLoc}/>}
+      {showAdd&&<AddEntryModal entry={newEntry} setEntry={setNewEntry} photo={photo} onPhoto={handlePhoto} loading={aiLoading} suggestions={aiSuggestions} onAI={handleAI} onSave={handleSave} onClose={()=>{setShowAdd(false);setPhoto(null);setAiSuggestions(null);setEntryLoc(null);setNewEntry({type:'tree',name:'',notes:'',description:'',pub:false}); }} entryLoc={entryLoc}/>}
       {selectedPlace&&<PlaceDetailModal place={selectedPlace} userLoc={userLoc} onClose={()=>setSelectedPlace(null)} onShare={handleSharePlace}/>}
       {selectedEntry&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:300,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
@@ -1463,6 +1481,7 @@ export default function TrailKeeper(){
               <div style={{background:C.pg,borderRadius:14,padding:12,marginBottom:14,display:'flex',gap:8,flexWrap:'wrap'}}>
                 <span style={{fontSize:11,fontWeight:700,color:C.mg,background:C.wh,padding:'4px 10px',borderRadius:8}}>📅 {selectedEntry.date}</span>
                 <span style={{fontSize:11,fontWeight:700,color:C.sky,background:C.wh,padding:'4px 10px',borderRadius:8}}>📍 {selectedEntry.lat.toFixed(5)}, {selectedEntry.lng.toFixed(5)}</span>
+                {(selectedEntry.pub||selectedEntry.publicSource)&&<span style={{fontSize:11,fontWeight:700,color:selectedEntry.publicSource?C.sky:C.mg,background:C.wh,padding:'4px 10px',borderRadius:8}}>{selectedEntry.publicSource?'🌍 Public discovery':'🌍 Published'}</span>}
               </div>
               {selectedEntry.notes&&<div style={{fontSize:14,color:C.dg,lineHeight:1.65,background:C.pg,borderRadius:12,padding:'10px 14px',marginBottom:16}}>{selectedEntry.notes}</div>}
               <button onClick={()=>setSelectedEntry(null)} style={{width:'100%',padding:'14px',borderRadius:16,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:14,cursor:'pointer'}}>Close</button>
