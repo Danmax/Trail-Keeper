@@ -5,6 +5,7 @@ const corsHeaders = {
 };
 
 Deno.serve(async req => {
+  try {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") {
     return Response.json({ error: "Method not allowed" }, { status: 405, headers: corsHeaders });
@@ -52,5 +53,9 @@ Deno.serve(async req => {
     return Response.json({ suggestions: JSON.parse(text) }, { headers: corsHeaders });
   } catch {
     return Response.json({ error: "Model returned invalid JSON" }, { status: 502, headers: corsHeaders });
+  }
+  } catch (error) {
+    console.error("identify-species error", error);
+    return Response.json({ error: error?.message || "identify-species failed" }, { status: 500, headers: corsHeaders });
   }
 });

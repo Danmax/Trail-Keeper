@@ -7,14 +7,17 @@ const C = {
   sky:'#0096C7',am:'#F59E0B',wh:'#FFFFFF',gr:'#6B7280',sb:'#3ECF8E',
 };
 const ENV = import.meta.env || {};
+function cleanSupabaseUrl(url){
+  return (url||'').trim().replace(/([^:])\/+/g,'$1/').replace(/\.\.+/g,'.').replace(/\/$/,'');
+}
 const SUPABASE_CONFIG = {
-  url:ENV.VITE_SUPABASE_URL||'',
+  url:cleanSupabaseUrl(ENV.VITE_SUPABASE_URL||''),
   anonKey:ENV.VITE_SUPABASE_ANON_KEY||'',
 };
 const GOOGLE_HEALTH_CONFIG = {
   clientId:ENV.VITE_GOOGLE_HEALTH_CLIENT_ID||'',
 };
-const AI_IDENTIFY_URL = ENV.VITE_AI_IDENTIFY_URL||(SUPABASE_CONFIG.url?SUPABASE_CONFIG.url.replace(/\/$/,'')+'/functions/v1/identify-species':'');
+const AI_IDENTIFY_URL = cleanSupabaseUrl(ENV.VITE_AI_IDENTIFY_URL||(SUPABASE_CONFIG.url?SUPABASE_CONFIG.url+'/functions/v1/identify-species':''));
 const TYPES = [
   {id:'all',label:'All',icon:'🌍',color:C.mg},
   {id:'tree',label:'Trees',icon:'🌳',color:'#166534'},
@@ -117,7 +120,22 @@ function latToTileY(lat,z){const r=lat*Math.PI/180;return(1-Math.log(Math.tan(r)
 function tileUrl(x,y,z){return 'https://tile.openstreetmap.org/'+z+'/'+x+'/'+y+'.png';}
 
 function RealMap({points=[],userLoc=null,height=320,zoom=16,showRoute=true}){
-  const W=390,H=height;
+  const mapRef=useRef(null);
+  const [mapW,setMapW]=useState(390);
+  useEffect(()=>{
+    const el=mapRef.current;
+    if(!el)return;
+    const update=()=>setMapW(Math.max(1,Math.round(el.clientWidth||390)));
+    update();
+    if(typeof ResizeObserver==='undefined'){
+      window.addEventListener('resize',update);
+      return()=>window.removeEventListener('resize',update);
+    }
+    const ro=new ResizeObserver(update);
+    ro.observe(el);
+    return()=>ro.disconnect();
+  },[]);
+  const W=mapW,H=height;
   const center=points.length?points[points.length-1]:userLoc||{lat:25.7617,lng:-80.1918};
   const z=clamp(zoom,3,19);
   const centerTile={x:lngToTileX(center.lng,z),y:latToTileY(center.lat,z)};
@@ -136,7 +154,7 @@ function RealMap({points=[],userLoc=null,height=320,zoom=16,showRoute=true}){
   const start=points.length?toPx(points[0]):null;
   const cur=points.length?toPx(points[points.length-1]):userLoc?toPx(userLoc):null;
   return(
-    <div style={{position:'relative',height:H,overflow:'hidden',background:'#dbeafe'}}>
+    <div ref={mapRef} style={{position:'relative',height:H,overflow:'hidden',background:'#dbeafe'}}>
       {tiles.map(t=><img key={t.key} src={t.src} alt="" draggable="false" style={{position:'absolute',left:t.x,top:t.y,width:256,height:256,userSelect:'none',WebkitUserDrag:'none'}}/>)}
       <svg width="100%" height="100%" viewBox={'0 0 '+W+' '+H} preserveAspectRatio="none" style={{position:'absolute',inset:0,pointerEvents:'none'}}>
         {showRoute&&points.length>1&&<polyline points={routePts} fill="none" stroke="rgba(0,150,199,0.28)" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round"/>}
@@ -1550,7 +1568,7 @@ export default function TrailKeeper(){
     if(!newEntry.description)return;
     setAiLoading(true);setAiSuggestions(null);
     try{setAiSuggestions(await aiIdentify(newEntry.description,newEntry.type,session?.access_token));}
-    catch{setAiSuggestions([{name:'Could not identify',species:'Try a more detailed description',confidence:'Low',tip:'Describe color, size, shape, and habitat'}]);}
+    catch(e){setAiSuggestions([{name:'Could not identify',species:'AI service error',confidence:'Low',tip:e.message||'Check the Supabase function logs and OpenAI API key'}]);}
     setAiLoading(false);
   };
   const handleSave=()=>{
