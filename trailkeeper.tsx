@@ -1368,6 +1368,8 @@ export default function TrailKeeper(){
   const [entryReactions,setEntryReactions]=useState([]);
   const [commentDraft,setCommentDraft]=useState('');
   const [entrySocialLoading,setEntrySocialLoading]=useState(false);
+  const [fullImage,setFullImage]=useState(null);
+  const [mapEntry,setMapEntry]=useState(null);
   const [selectedPlace,setSelectedPlace]=useState(null);
   const [shareTrail,setShareTrail]=useState(null);
   const [userLoc,setUserLoc]=useState(null);
@@ -1667,7 +1669,7 @@ export default function TrailKeeper(){
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:300,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
           <div style={{width:'100%',maxWidth:430,background:C.cr,borderRadius:'28px 28px 0 0',maxHeight:'82vh',overflowY:'auto',paddingBottom:24}}>
             <div style={{display:'flex',justifyContent:'center',padding:'12px 0'}}><div style={{width:36,height:4,borderRadius:2,background:'#D1D5DB'}}/></div>
-            {selectedEntry.photo&&<div style={{width:'100%',height:200,background:'url('+selectedEntry.photo+') center/cover'}}/>}
+            {selectedEntry.photo&&<div onClick={()=>setFullImage(selectedEntry.photo)} style={{width:'100%',height:200,background:'url('+selectedEntry.photo+') center/cover',cursor:'pointer',position:'relative'}}><div style={{position:'absolute',right:12,bottom:10,background:'rgba(0,0,0,0.55)',color:C.wh,borderRadius:10,padding:'5px 9px',fontSize:11,fontWeight:800}}>View full image</div></div>}
             <div style={{padding:'16px 20px'}}>
               <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:14}}>
                 <div style={{width:54,height:54,borderRadius:16,background:(TYPES.find(x=>x.id===selectedEntry.type)||TYPES[1]).color+'22',display:'flex',alignItems:'center',justifyContent:'center',fontSize:28,flexShrink:0}}>{(TYPES.find(x=>x.id===selectedEntry.type)||TYPES[1]).icon}</div>
@@ -1675,7 +1677,7 @@ export default function TrailKeeper(){
               </div>
               <div style={{background:C.pg,borderRadius:14,padding:12,marginBottom:14,display:'flex',gap:8,flexWrap:'wrap'}}>
                 <span style={{fontSize:11,fontWeight:700,color:C.mg,background:C.wh,padding:'4px 10px',borderRadius:8}}>📅 {selectedEntry.date}</span>
-                <span style={{fontSize:11,fontWeight:700,color:C.sky,background:C.wh,padding:'4px 10px',borderRadius:8}}>📍 {selectedEntry.lat.toFixed(5)}, {selectedEntry.lng.toFixed(5)}</span>
+                <button onClick={()=>setMapEntry(selectedEntry)} style={{fontSize:11,fontWeight:700,color:C.sky,background:C.wh,padding:'4px 10px',borderRadius:8,border:'none',cursor:'pointer'}}>📍 {selectedEntry.lat.toFixed(5)}, {selectedEntry.lng.toFixed(5)}</button>
                 {(selectedEntry.pub||selectedEntry.publicSource)&&<span style={{fontSize:11,fontWeight:700,color:selectedEntry.publicSource?C.sky:C.mg,background:C.wh,padding:'4px 10px',borderRadius:8}}>{selectedEntry.publicSource?'🌍 Public discovery':'🌍 Published'}</span>}
               </div>
               {selectedEntry.notes&&<div style={{fontSize:14,color:C.dg,lineHeight:1.65,background:C.pg,borderRadius:12,padding:'10px 14px',marginBottom:16}}>{selectedEntry.notes}</div>}
@@ -1716,6 +1718,27 @@ export default function TrailKeeper(){
                 </div>
               )}
               <button onClick={closeEntryDetail} style={{width:'100%',padding:'14px',borderRadius:16,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:700,fontSize:14,cursor:'pointer'}}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {fullImage&&(
+        <div onClick={()=>setFullImage(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:650,display:'flex',alignItems:'center',justifyContent:'center',padding:16,cursor:'zoom-out'}}>
+          <button onClick={()=>setFullImage(null)} style={{position:'absolute',top:18,right:18,width:38,height:38,borderRadius:14,border:'none',background:'rgba(255,255,255,0.16)',color:C.wh,fontSize:22,fontWeight:900,cursor:'pointer'}}>×</button>
+          <img src={fullImage} alt="" onClick={e=>e.stopPropagation()} style={{maxWidth:'100%',maxHeight:'88vh',objectFit:'contain',borderRadius:14}}/>
+        </div>
+      )}
+      {mapEntry&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.58)',zIndex:640,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+          <div style={{width:'100%',maxWidth:430,background:C.cr,borderRadius:'28px 28px 0 0',overflow:'hidden',paddingBottom:18}}>
+            <div style={{padding:'14px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div><div style={{fontWeight:900,fontSize:17,color:C.dg}}>{mapEntry.name}</div><div style={{fontSize:12,color:C.gr}}>📍 {mapEntry.lat.toFixed(5)}, {mapEntry.lng.toFixed(5)}</div></div>
+              <button onClick={()=>setMapEntry(null)} style={{border:'none',background:C.pg,color:C.dg,borderRadius:12,width:34,height:34,fontSize:18,fontWeight:800,cursor:'pointer'}}>×</button>
+            </div>
+            <RealMap points={[]} userLoc={{lat:mapEntry.lat,lng:mapEntry.lng}} height={330} zoom={17} showRoute={false}/>
+            <div style={{display:'flex',gap:10,padding:'14px 16px 0'}}>
+              <button onClick={()=>window.open('https://www.google.com/maps/dir/?api=1&destination='+mapEntry.lat+','+mapEntry.lng,'_blank','noopener,noreferrer')} style={{flex:1,padding:'13px',borderRadius:14,border:'none',background:C.mg,color:C.wh,fontWeight:800,fontSize:13,cursor:'pointer'}}>🧭 Directions</button>
+              <button onClick={()=>window.open('https://www.openstreetmap.org/?mlat='+mapEntry.lat+'&mlon='+mapEntry.lng+'#map=17/'+mapEntry.lat+'/'+mapEntry.lng,'_blank','noopener,noreferrer')} style={{flex:1,padding:'13px',borderRadius:14,border:'1.5px solid '+C.pg,background:C.pg,color:C.dg,fontWeight:800,fontSize:13,cursor:'pointer'}}>Open Map</button>
             </div>
           </div>
         </div>
